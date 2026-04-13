@@ -1,19 +1,19 @@
 installation:
-  version: 6.2.0
+  version: 6.3.0
   installDate: 2026-04-13T22:48:46.750Z
-  lastUpdated: 2026-04-13T22:48:46.750Z
+  lastUpdated: 2026-04-13T23:11:34.035Z
 modules:
   - name: core
-    version: 6.2.0
+    version: 6.3.0
     installDate: 2026-04-13T22:48:46.750Z
-    lastUpdated: 2026-04-13T22:48:46.750Z
+    lastUpdated: 2026-04-13T23:11:34.034Z
     source: built-in
     npmPackage: null
     repoUrl: null
   - name: bmm
-    version: 6.2.0
+    version: 6.3.0
     installDate: 2026-04-13T22:48:46.521Z
-    lastUpdated: 2026-04-13T22:48:46.750Z
+    lastUpdated: 2026-04-13T23:11:34.035Z
     source: built-in
     npmPackage: null
     repoUrl: null
@@ -24,3 +24,5 @@ ides:
   - antigravity
   - kiro
   - opencode
+  - cursor
+  - gemini
