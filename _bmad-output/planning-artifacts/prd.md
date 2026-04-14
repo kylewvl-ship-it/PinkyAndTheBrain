@@ -9,6 +9,9 @@ stepsCompleted:
   - step-05-domain
   - step-06-innovation
   - step-07-project-type
+  - step-e-01-discovery
+  - step-e-02-review
+  - step-e-03-edit
 inputDocuments:
   - README.md
   - bulletproof_2nd_brain_system_v4.md
@@ -27,6 +30,10 @@ classification:
   domain: general
   complexity: low
   projectContext: brownfield
+lastEdited: '2026-04-14'
+editHistory:
+  - date: '2026-04-14'
+    changes: 'Added FR/NFR sections, clarified MVP automation phasing and out-of-scope boundaries, and added migration requirements.'
 ---
 
 # Product Requirements Document - PinkyAndTheBrain
@@ -90,9 +97,20 @@ Technical success requires the system to check itself. It should detect stale in
 
 ### MVP - Minimum Viable Product
 
-The MVP must include automatic AI conversation capture, a wiki promotion workflow, search and retrieval, and knowledge health checks. It should provide enough structure to move information from captured conversations or raw notes into durable wiki pages, while preserving provenance and preventing uncontrolled duplication.
+The MVP must include a usable knowledge lifecycle: capture, triage, working-note development, wiki promotion, search or retrieval, and knowledge health checks. It should provide enough structure to move information from captured conversations or raw notes into durable wiki pages, while preserving provenance and preventing uncontrolled duplication.
 
 The MVP should prioritize working knowledge flow over polished UI. The core experience is: capture information, filter it, promote durable knowledge, retrieve it later, and run checks that identify stale or low-trust knowledge.
+
+AI conversation capture should be phased. The first MVP milestone may support manual or semi-automated conversation import so the Markdown workflow can be proven. Automatic AI conversation capture is part of the MVP target, but it should not block validation of the core capture-review-promote-retrieve-health loop.
+
+### Out of Scope for MVP
+
+- A hosted SaaS product, multi-user account system, or revenue model.
+- A required Obsidian plugin or replacement note-taking UI.
+- Silent auto-promotion of AI conversation extracts into verified wiki pages.
+- A database-first architecture or opaque knowledge store.
+- Fully automated contradiction resolution, deduplication, or archival decisions without human review.
+- Mobile, web dashboard, or polished visual analytics beyond examples needed to prove the workflow.
 
 ### Growth Features (Post-MVP)
 
@@ -266,6 +284,70 @@ The journeys reveal the following capability areas:
 - Configurable paths, capture sources, review cadence, health-check strictness, and context-injection rules.
 - Multi-project or domain separation to prevent irrelevant knowledge from contaminating retrieval.
 
+## Functional Requirements
+
+FR-001: Reno can capture low-friction inbox items from AI responses, copied snippets, links, ideas, project notes, and questions without choosing a final knowledge layer at capture time.
+
+FR-002: Reno can import or manually record AI conversation knowledge into a raw session log while preserving source context and review status.
+
+FR-003: Reno can triage inbox items into delete, archive, raw, working, or wiki-candidate paths with a visible disposition for each item.
+
+FR-004: Reno can create working notes from templates that preserve status, trigger, current interpretation, evidence, connections, tensions, open questions, next moves, and source pointers.
+
+FR-005: Reno can promote reviewed working knowledge into wiki-ready Markdown only after checking sources, confidence, contradictions, and whether a canonical wiki page already exists.
+
+FR-006: Reno can mark wiki knowledge with status, owner, confidence, last updated, last verified, review trigger, and source list.
+
+FR-007: Reno can search or retrieve relevant knowledge across wiki pages, working notes, raw logs, archive, and task files with enough source context to decide whether the result is trustworthy.
+
+FR-008: Reno can diagnose search misses by checking aliases, canonical names, archived material, raw or working notes, and index coverage.
+
+FR-009: Reno can run knowledge health checks that report stale review dates, broken links, missing metadata, unsupported claims, duplicate concepts, orphaned pages, and contradiction candidates.
+
+FR-010: Reno can review each health-check finding and choose a repair action such as update, merge, add provenance, archive, leave unchanged with a note, or defer.
+
+FR-011: Reno can archive stale, replaced, low-confidence, or no-longer-useful notes with an archive reason, replacement link when applicable, and default retrieval exclusion.
+
+FR-012: Reno can mark sensitive content with redaction, exclusion, private, or do-not-promote metadata before it is promoted or injected into future AI sessions.
+
+FR-013: Reno can generate or assemble task-aware AI handoff context from relevant task files, wiki references, prior decisions, and source pointers while avoiding unnecessary prompt bloat.
+
+FR-014: Reno can configure vault paths, capture sources, review cadence, health-check strictness, archive behavior, and agent context-injection rules in explicit editable configuration.
+
+FR-015: Reno can import an existing Obsidian vault through a non-destructive preview that proposes folder mapping, duplicate handling, classification into inbox/raw/working/wiki/archive, and rollback steps before any restructuring.
+
+FR-016: Reno can capture non-AI sources such as articles, videos, docs, links, snippets, ideas, meeting notes, and book notes with provenance metadata.
+
+FR-017: Reno can keep unrelated projects or learning domains separated during retrieval by using project or domain scope metadata and filters.
+
+FR-018: Reno can use the system when optional Codex, Claude, VS Code, Cursor, or Obsidian hooks are missing by relying on repo files, Markdown templates, and local scripts.
+
+## Non-Functional Requirements
+
+NFR-001: The knowledge base must remain local-first and portable; core knowledge artifacts must be readable and editable as Markdown files without a hosted service.
+
+NFR-002: The MVP must preserve Obsidian compatibility by using vault-safe folders, Markdown files, frontmatter where structured metadata is needed, and Obsidian-friendly links.
+
+NFR-003: The system must not promote captured AI conversation content into verified wiki knowledge without an explicit review gate.
+
+NFR-004: Each health-check finding must include finding type, affected file path, severity, source or rule that triggered it, and suggested repair path so Reno can decide an action without opening more than one additional context source.
+
+NFR-005: Health-check output must list high-confidence deterministic checks before heuristic checks, with missing metadata, broken links, stale review dates, duplicate titles or aliases, unsupported claims, and orphaned pages grouped by finding type.
+
+NFR-006: Retrieval output must include provenance or source pointers for returned wiki, working, raw, archive, or task context.
+
+NFR-007: Archive content must be excluded from default retrieval unless the user explicitly requests archived or historical context.
+
+NFR-008: Sensitive content controls must be inspectable in Markdown metadata or adjacent configuration so a user can verify what is private, excluded, redacted, or do-not-promote.
+
+NFR-009: If optional Codex, Claude, VS Code, Cursor, or Obsidian hooks are missing, the system must still support capture, triage, promotion, retrieval, and health-check workflows through repo files, Markdown templates, and local scripts.
+
+NFR-010: Automation must preserve inspectability by writing reviewable files, reports, or suggestions instead of making irreversible hidden state changes.
+
+NFR-011: Existing vault import must be non-destructive by default and must provide a preview and rollback path before moving, renaming, or classifying existing notes.
+
+NFR-012: Routine daily maintenance should be completable in 15 minutes for normal use by limiting required actions to inbox triage, active working-note review, and repair of health-check findings that directly affect future retrieval.
+
 ## Domain-Specific Requirements
 
 ### Compliance & Regulatory
@@ -361,6 +443,14 @@ The MVP API surface should be workflow- and command-oriented rather than library
 - Run health checks for metadata, broken links, stale review dates, duplicates, unsupported claims, and orphaned pages.
 - Search or retrieve relevant knowledge for an agent handoff.
 - Generate or refresh indexes used for retrieval and navigation.
+
+### Migration Requirements
+
+Existing Obsidian vault import should be treated as a preview-first migration workflow rather than an automatic restructure. The workflow should scan the vault, summarize folder and note types, propose mappings into inbox, raw, working, wiki, archive, or project-specific areas, and identify likely duplicates before any files are moved.
+
+Migration actions should be reversible. The system should produce a migration plan with source paths, target paths, classification reasons, duplicate candidates, skipped items, and rollback instructions. The user should approve the plan before any write operation affects existing notes.
+
+Migration should preserve source material and metadata. When a note cannot be confidently classified, the system should leave it in place or route it to a review queue rather than guessing.
 
 ### Code Examples and Fixtures
 
