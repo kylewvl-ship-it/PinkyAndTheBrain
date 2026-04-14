@@ -12,7 +12,7 @@ private: false
 do_not_promote: false
 ---
 
-# <Title>
+# <title>
 
 ## Prompt / Trigger
 
@@ -45,6 +45,4 @@ What does not fit yet.
 ## Source Pointers
 
 - raw/<file>
-- wiki/<page>
-- src/<path>
 

@@ -15,7 +15,7 @@ do_not_promote: false
 ai_content_reviewed: false
 ---
 
-# <Title>
+# <title>
 
 ## Summary
 

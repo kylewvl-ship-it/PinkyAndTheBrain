@@ -6,9 +6,9 @@ inputDocuments:
   - "_bmad-output/planning-artifacts/epics.md"
   - "_bmad-output/planning-artifacts/prd-validation-report-post-edit.md"
 assessmentDate: "2026-04-15"
-overallStatus: "READY"
-criticalIssues: 0
-majorIssues: 2
+overallStatus: "READY_WITH_FOUNDATION_GAPS"
+criticalIssues: 1
+majorIssues: 3
 minorIssues: 0
 ---
 
@@ -18,6 +18,16 @@ minorIssues: 0
 **Project:** PinkyAndTheBrain
 
 ## Document Inventory
+
+## Implementation Reality Check
+
+This assessment validates that planning documents are coherent enough to begin implementation. It does not mean the MVP runtime is already complete.
+
+Current foundation gaps that must be closed by Story 0.1:
+- Create the PowerShell command surface in `scripts/`.
+- Create machine-parseable frontmatter templates in `templates/` and `knowledge/schemas/`.
+- Create `config/pinky-config.yaml`, `.gitignore`, logs, and per-folder indexes.
+- Verify setup, capture, triage, search, sync, and health-check commands locally.
 
 ### Documents Found and Validated
 

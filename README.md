@@ -9,6 +9,15 @@ Local-first second brain + LLM wiki + multi-agent operating system.
 ## Current MVP
 This repo starts as a Markdown-first operating system. Do not build an app or database until the manual workflow proves what needs automation.
 
+## MVP Commands
+- `.\scripts\setup-system.ps1`: verify/create the required local folder structure.
+- `.\scripts\capture.ps1 -Title "Idea" -Content "..."`: capture a new inbox item.
+- `.\scripts\triage.ps1 -List`: list inbox items awaiting disposition.
+- `.\scripts\triage.ps1 -File "<file>" -Disposition working`: move an item into a knowledge layer.
+- `.\scripts\search.ps1 -Query "term"`: search the knowledge base, excluding archive by default.
+- `.\scripts\health-check.ps1 -WriteReport`: check metadata, links, sources, stale reviews, and orphaned notes.
+- `.\scripts\obsidian-sync.ps1 -WriteIndexes`: refresh layer indexes for Obsidian-friendly navigation.
+
 ## Authority Hierarchy
 1. Code + passing tests
 2. Migrations / schemas / contracts / APIs

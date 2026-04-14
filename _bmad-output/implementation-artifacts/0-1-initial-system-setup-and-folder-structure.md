@@ -1,6 +1,6 @@
 # Story 0.1: Initial System Setup and Folder Structure
 
-Status: ready-for-dev
+Status: in-progress
 
 ## Story
 
@@ -70,14 +70,14 @@ config/
 
 ## Tasks / Subtasks
 
-- [ ] Create PowerShell setup script (AC: Fresh system initialization)
-  - [ ] Implement folder structure creation
-  - [ ] Add validation and error handling
-  - [ ] Create index.md files for each folder
-- [ ] Generate default configuration file (AC: Post-setup validation)
-  - [ ] Create pinky-config.yaml with all required settings
-  - [ ] Add schema definitions in schemas/ folder
-  - [ ] Create .gitignore file
+- [x] Create PowerShell setup script (AC: Fresh system initialization)
+  - [x] Implement folder structure creation
+  - [x] Add validation and error handling
+  - [x] Create index.md files for each folder
+- [x] Generate default configuration file (AC: Post-setup validation)
+  - [x] Create pinky-config.yaml with all required settings
+  - [x] Add schema definitions in schemas/ folder
+  - [x] Create .gitignore file
 - [ ] Implement backup and rollback functionality (AC: Existing directory protection)
   - [ ] Detect existing content
   - [ ] Create timestamped backups
@@ -180,4 +180,24 @@ Claude Sonnet 4
 
 ### Completion Notes List
 
+- Added a usable PowerShell MVP command surface: setup, capture, triage, search, health-check, and Obsidian index sync.
+- Added script-friendly templates, config, `.gitignore`, logs placeholder, and per-folder `index.md` files.
+- Aligned the MVP runtime decision on PowerShell and converted knowledge schemas to YAML frontmatter.
+
 ### File List
+
+- `.gitignore`
+- `config/pinky-config.yaml`
+- `templates/inbox-item.md`
+- `templates/working-note.md`
+- `templates/wiki-page.md`
+- `templates/conversation-import.md`
+- `scripts/setup-system.ps1`
+- `scripts/capture.ps1`
+- `scripts/triage.ps1`
+- `scripts/search.ps1`
+- `scripts/health-check.ps1`
+- `scripts/obsidian-sync.ps1`
+- `knowledge/*/index.md`
+- `knowledge/schemas/wiki-page-template.md`
+- `knowledge/schemas/working-note-template.md`

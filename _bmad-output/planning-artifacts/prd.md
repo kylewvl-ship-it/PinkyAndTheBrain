@@ -421,10 +421,10 @@ The system should avoid requiring an Obsidian plugin for the MVP. Integration sh
 
 ### Language Matrix
 
-- Python should be the primary automation/runtime language for MVP scripts.
+- PowerShell should be the primary automation/runtime language for MVP scripts because the MVP is Windows-local, repo-native, and already specified through PowerShell story acceptance criteria.
 - Markdown remains the primary knowledge artifact format.
 - YAML frontmatter should be used where structured metadata is needed.
-- Shell/PowerShell wrappers may be used only when they simplify local execution without becoming the core implementation.
+- Python may be introduced later for parsing-heavy features if the PowerShell MVP proves the workflow and the extra runtime is justified.
 
 ### Installation Methods
 
