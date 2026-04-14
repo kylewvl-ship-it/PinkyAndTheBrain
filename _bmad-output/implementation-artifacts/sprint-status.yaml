@@ -1,0 +1,105 @@
+# generated: 2026-04-15T00:00:00.000Z
+# last_updated: 2026-04-15T00:00:00.000Z
+# project: PinkyAndTheBrain
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-04-15T00:00:00.000Z
+last_updated: 2026-04-15T00:00:00.000Z
+project: PinkyAndTheBrain
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # Epic 0: System Foundation
+  epic-0: in-progress
+  0-1-initial-system-setup-and-folder-structure: ready-for-dev
+  0-2-template-system-creation: backlog
+  0-3-powershell-script-implementation: backlog
+  0-4-configuration-management-system: backlog
+  0-5-git-integration-and-version-control: backlog
+  epic-0-retrospective: optional
+  
+  # Epic 1: Basic Knowledge Lifecycle
+  epic-1: backlog
+  1-1-quick-knowledge-capture: backlog
+  1-2-inbox-triage-workflow: backlog
+  1-3-working-note-creation-and-management: backlog
+  epic-1-retrospective: optional
+  
+  # Epic 2: Knowledge Quality & Promotion
+  epic-2: backlog
+  2-1-wiki-promotion-workflow: backlog
+  2-2-wiki-metadata-management: backlog
+  2-3-content-archival-system: backlog
+  epic-2-retrospective: optional
+  
+  # Epic 3: Knowledge Discovery & Retrieval
+  epic-3: backlog
+  3-1-cross-layer-knowledge-search: backlog
+  3-2-search-diagnostics-and-troubleshooting: backlog
+  3-3-ai-handoff-context-generation: backlog
+  epic-3-retrospective: optional
+  
+  # Epic 4: Advanced Capture & Sources
+  epic-4: backlog
+  4-1-ai-conversation-import: backlog
+  4-2-non-ai-source-capture: backlog
+  4-3-capture-configuration-management: backlog
+  epic-4-retrospective: optional
+  
+  # Epic 5: Privacy & Project Management
+  epic-5: backlog
+  5-1-sensitive-content-controls: backlog
+  5-2-project-and-domain-separation: backlog
+  5-3-vault-import-preview-and-analysis: backlog
+  5-4-vault-import-execution: backlog
+  5-5-import-rollback-and-recovery: backlog
+  epic-5-retrospective: optional
+  
+  # Epic 6: System Health & Maintenance
+  epic-6: backlog
+  6-1-automated-health-checks: backlog
+  6-2-health-check-finding-resolution: backlog
+  6-3-offline-and-hook-free-operation: backlog
+  epic-6-retrospective: optional
+  
+  # Epic 7: System Reliability & NFR Compliance
+  epic-7: backlog
+  7-1-ai-content-review-gates: backlog
+  7-2-structured-health-check-reporting: backlog
+  7-3-inspectable-automation: backlog
+  7-4-15-minute-daily-maintenance: backlog
+  7-5-error-handling-and-recovery: backlog
+  epic-7-retrospective: optional
