@@ -5,13 +5,69 @@ inputDocuments:
   - "_bmad-output/planning-artifacts/architecture.md"
   - "_bmad-output/planning-artifacts/prd-validation-report.md"
   - "_bmad-output/planning-artifacts/prd-validation-report-post-edit.md"
+epic_priority: high
+implementation_order: foundation_first
+document_version: "2.0"
+last_validated: "2026-04-15"
 ---
 
 # PinkyAndTheBrain - Epic Breakdown
 
 ## Overview
 
-This document provides the complete epic and story breakdown for PinkyAndTheBrain, decomposing the requirements from the PRD, UX Design if it exists, and Architecture requirements into implementable stories.
+This document provides the complete epic and story breakdown for PinkyAndTheBrain, decomposing the requirements from the Product Requirements Document (PRD), UX Design specifications, and Architecture requirements into implementable stories.
+
+**Target User**: Reno (intermediate skill level knowledge worker)  
+**System Type**: Local-first knowledge management system with Obsidian compatibility  
+**Implementation Approach**: PowerShell-based automation with Markdown file storage
+
+## Table of Contents
+
+- [Glossary](#glossary)
+- [Requirements Inventory](#requirements-inventory)
+- [Epic List](#epic-list)
+- [Story Dependencies](#story-dependencies)
+- **Epic Details:**
+  - [Epic 0: System Foundation](#epic-0-system-foundation)
+  - [Epic 1: Basic Knowledge Lifecycle](#epic-1-basic-knowledge-lifecycle)
+  - [Epic 2: Knowledge Quality & Promotion](#epic-2-knowledge-quality--promotion)
+  - [Epic 3: Knowledge Discovery & Retrieval](#epic-3-knowledge-discovery--retrieval)
+  - [Epic 4: Advanced Capture & Sources](#epic-4-advanced-capture--sources)
+  - [Epic 5: Privacy & Project Management](#epic-5-privacy--project-management)
+  - [Epic 6: System Health & Maintenance](#epic-6-system-health--maintenance)
+  - [Epic 7: System Reliability & NFR Compliance](#epic-7-system-reliability--nfr-compliance)
+
+## Glossary
+
+**AI Handoff Context**: Curated knowledge package prepared for AI agent consumption, limited to token constraints and excluding private content.
+
+**Archive**: Storage layer for outdated or replaced knowledge that should not appear in default searches but remains accessible for historical reference.
+
+**Capture**: The process of quickly saving information (from any source) into the inbox without immediate categorization.
+
+**Disposition**: The classification decision made during triage (delete, archive, raw, working, wiki-candidate).
+
+**FR**: Functional Requirement - specific system behaviors and capabilities.
+
+**Health Check**: Automated analysis that identifies knowledge base issues like broken links, missing metadata, or stale content.
+
+**Inbox**: Temporary storage for newly captured items awaiting triage and classification.
+
+**Knowledge Layer**: One of the five organizational levels: inbox, raw, working, wiki, archive.
+
+**NFR**: Non-Functional Requirement - system qualities like performance, security, and usability constraints.
+
+**Promotion**: Moving content from a lower knowledge layer to a higher one (e.g., working → wiki) with validation.
+
+**Provenance**: Source tracking metadata that identifies where knowledge originated and how it was captured.
+
+**Raw**: Storage for imported conversations and unprocessed source material that preserves original format.
+
+**Triage**: The review process where inbox items are assigned dispositions and moved to appropriate knowledge layers.
+
+**Working Notes**: Structured documents for developing ideas with templates for interpretation, evidence, and connections.
+
+**Wiki**: Verified knowledge layer containing trusted, well-sourced information ready for reference and AI handoff.
 
 ## Requirements Inventory
 
@@ -141,9 +197,35 @@ NFR-010: Epic 7.3 - Inspectable automation
 NFR-012: Epic 7.4 - 15-minute daily maintenance
 Error Handling: Epic 7.5 - Error handling and recovery
 
-## Epic List
+## Story Dependencies
 
-### Epic 0: System Foundation
+### Critical Path Dependencies
+```
+Epic 0 (Foundation) → All Other Epics
+Epic 1 (Basic Lifecycle) → Epic 2 (Quality & Promotion)
+Epic 2 (Quality & Promotion) → Epic 3 (Discovery & Retrieval)
+Epic 4 (Advanced Capture) → Epic 5 (Privacy & Project Management)
+Epic 6 (Health & Maintenance) → Epic 7 (Reliability & NFR)
+```
+
+### Story-Level Dependencies
+| Story | Depends On | Reason |
+|-------|------------|---------|
+| 1.2 (Inbox Triage) | 0.1, 0.2, 0.3 | Requires folder structure, templates, and scripts |
+| 1.3 (Working Notes) | 0.2 (Templates) | Needs working note template system |
+| 2.1 (Wiki Promotion) | 1.3 (Working Notes) | Promotes from working notes |
+| 3.1 (Cross-Layer Search) | 1.1, 1.2, 2.1 | Needs content in multiple layers |
+| 5.3-5.5 (Vault Import) | 0.1-0.5 (All Foundation) | Requires complete system setup |
+| 6.1 (Health Checks) | All content creation stories | Needs content to validate |
+| 7.4 (Daily Maintenance) | 6.1, 6.2 (Health system) | Builds on health check infrastructure |
+
+### Implementation Phases
+**Phase 1 - Foundation** (Epic 0): Complete before any other work  
+**Phase 2 - Core Workflow** (Epics 1-2): Basic capture → triage → promotion cycle  
+**Phase 3 - Advanced Features** (Epics 3-4): Search, AI handoff, advanced capture  
+**Phase 4 - Enterprise Features** (Epics 5-7): Privacy, imports, maintenance automation
+
+## Epic List
 Reno can set up the complete PinkyAndTheBrain system from scratch with proper folder structure, templates, scripts, and configuration.
 **FRs covered:** Foundation for all other FRs
 **Additional Requirements covered:** Starter Template Implementation, Folder Structure Setup, Template System, Processing Pipeline Scripts, Git Repository Setup
@@ -180,17 +262,23 @@ Reno can rely on the system to maintain data integrity, provide consistent perfo
 
 Reno can set up the complete PinkyAndTheBrain system from scratch with proper folder structure, templates, scripts, and configuration.
 
+**FRs covered:** Foundation for all other FRs  
+**Additional Requirements covered:** Starter Template Implementation, Folder Structure Setup, Template System, Processing Pipeline Scripts, Git Repository Setup  
+**Implementation Priority:** Critical - Must complete before any other epic
+
 ### Story 0.1: Initial System Setup and Folder Structure
 
-As Reno,
-I want to initialize the PinkyAndTheBrain system with the complete folder structure and configuration,
+**User Story:**  
+As Reno,  
+I want to initialize the PinkyAndTheBrain system with the complete folder structure and configuration,  
 So that I have a working foundation for knowledge management.
 
 **Acceptance Criteria:**
 
-**Given** I want to set up PinkyAndTheBrain in a new directory
-**When** I run the setup command `.\scripts\setup-system.ps1`
-**Then** the following folder structure is created:
+**Scenario: Fresh system initialization**
+- **Given** I want to set up PinkyAndTheBrain in a new directory
+- **When** I run the setup command `.\scripts\setup-system.ps1`
+- **Then** the following folder structure is created:
 ```
 knowledge/
 ├── inbox/
@@ -217,30 +305,47 @@ config/
 └── pinky-config.yaml
 ```
 
-**Given** the folder structure is created
-**When** the setup completes
-**Then** each folder contains an `index.md` file explaining its purpose
-**And** the `schemas/` folder contains metadata schema definitions
-**And** the `config/pinky-config.yaml` file is populated with default settings
-**And** a `.gitignore` file is created to exclude temporary files
+**Scenario: Post-setup validation**
+- **Given** the folder structure is created
+- **When** the setup completes
+- **Then** each folder contains an `index.md` file explaining its purpose
+- **And** the `schemas/` folder contains metadata schema definitions
+- **And** the `config/pinky-config.yaml` file is populated with default settings
+- **And** a `.gitignore` file is created to exclude temporary files
 
-**Given** I run setup in an existing directory with files
-**When** the setup detects existing content
-**Then** it creates a backup folder with timestamp before proceeding
-**And** it prompts me to confirm before overwriting any existing files
-**And** it provides a rollback option to restore the backup
+**Scenario: Existing directory protection**
+- **Given** I run setup in an existing directory with files
+- **When** the setup detects existing content
+- **Then** it creates a backup folder with timestamp before proceeding
+- **And** it prompts me to confirm before overwriting any existing files
+- **And** it provides a rollback option to restore the backup
+
+**Error Scenarios:**
+- **Given** insufficient disk space during setup
+- **When** folder creation fails
+- **Then** the script displays clear error message with space requirements
+- **And** it cleans up any partially created folders
+- **And** it exits with non-zero status code
+
+- **Given** permission denied errors during setup
+- **When** folder creation is blocked
+- **Then** the script identifies which folders failed with specific permissions needed
+- **And** it provides instructions for running with elevated privileges
+- **And** it allows retry without recreating successful folders
 
 ### Story 0.2: Template System Creation
 
-As Reno,
-I want standardized templates for all knowledge types with proper frontmatter schemas,
+**User Story:**  
+As Reno,  
+I want standardized templates for all knowledge types with proper frontmatter schemas,  
 So that all captured knowledge follows consistent metadata patterns.
 
 **Acceptance Criteria:**
 
-**Given** the template system is initialized
-**When** I examine the `templates/` folder
-**Then** I find these template files with complete frontmatter schemas:
+**Scenario: Template file creation**
+- **Given** the template system is initialized
+- **When** I examine the `templates/` folder
+- **Then** I find these template files with complete frontmatter schemas:
 
 **Inbox Item Template (`inbox-item.md`):**
 ```yaml
@@ -338,65 +443,94 @@ exclude_from_ai: false
 {{uncertainty_caveats}}
 ```
 
-**Given** I create new content using templates
-**When** I use the capture commands
-**Then** the appropriate template is automatically applied
-**And** timestamp fields are auto-populated
-**And** I'm prompted to fill in required fields like title and content
+**Scenario: Template usage in capture**
+- **Given** I create new content using templates
+- **When** I use the capture commands
+- **Then** the appropriate template is automatically applied
+- **And** timestamp fields are auto-populated
+- **And** I'm prompted to fill in required fields like title and content
+
+**Error Scenarios:**
+- **Given** a template file is corrupted or missing required frontmatter
+- **When** the template is used for content creation
+- **Then** the system displays a clear error identifying the missing/invalid fields
+- **And** it provides a sample of correct frontmatter format
+- **And** it creates content with minimal valid frontmatter as fallback
 
 ### Story 0.3: PowerShell Script Implementation
 
-As Reno,
-I want functional PowerShell scripts for all core operations,
+**User Story:**  
+As Reno,  
+I want functional PowerShell scripts for all core operations,  
 So that I can perform knowledge management tasks through consistent command-line interfaces.
 
 **Acceptance Criteria:**
 
-**Given** the scripts are installed
-**When** I run `.\scripts\capture.ps1 -Type manual -Title "My Note" -Content "Note content"`
-**Then** a new file is created in `knowledge/inbox/` using the inbox template
-**And** the filename follows the pattern `YYYY-MM-DD-HHMMSS-title.md`
-**And** all metadata fields are properly populated
-**And** the script returns the full path of the created file
+**Scenario: Basic content capture**
+- **Given** the scripts are installed
+- **When** I run `.\scripts\capture.ps1 -Type manual -Title "My Note" -Content "Note content"`
+- **Then** a new file is created in `knowledge/inbox/` using the inbox template
+- **And** the filename follows the pattern `YYYY-MM-DD-HHMMSS-title.md`
+- **And** all metadata fields are properly populated
+- **And** the script returns the full path of the created file
 
-**Given** I want to import an AI conversation
-**When** I run `.\scripts\capture.ps1 -Type conversation -File "conversation.txt" -Service "claude"`
-**Then** the conversation is imported to `knowledge/raw/` with conversation template
-**And** the original conversation structure is preserved
-**And** metadata includes conversation_date, ai_service, and import_date
+**Scenario: AI conversation import**
+- **Given** I want to import an AI conversation
+- **When** I run `.\scripts\capture.ps1 -Type conversation -File "conversation.txt" -Service "claude"`
+- **Then** the conversation is imported to `knowledge/raw/` with conversation template
+- **And** the original conversation structure is preserved
+- **And** metadata includes conversation_date, ai_service, and import_date
 
-**Given** I want to triage inbox items
-**When** I run `.\scripts\triage.ps1`
-**Then** I see a numbered list of all inbox items with previews
-**And** I can select items by number and assign dispositions (delete/archive/raw/working/wiki)
-**And** selected items are moved to appropriate folders with updated metadata
-**And** the script handles multiple selections with comma-separated numbers
+**Scenario: Inbox triage workflow**
+- **Given** I want to triage inbox items
+- **When** I run `.\scripts\triage.ps1`
+- **Then** I see a numbered list of all inbox items with previews
+- **And** I can select items by number and assign dispositions (delete/archive/raw/working/wiki)
+- **And** selected items are moved to appropriate folders with updated metadata
+- **And** the script handles multiple selections with comma-separated numbers
 
-**Given** I want to search across all knowledge layers
-**When** I run `.\scripts\search.ps1 -Query "search term" -Layers wiki,working`
-**Then** results are returned with layer indicators [WIKI], [WORK], etc.
-**And** each result shows filename, last modified date, and 2-line preview
-**And** results are ranked by relevance (exact title > content > metadata matches)
-**And** maximum 20 results are returned with option to see more
+**Scenario: Knowledge search**
+- **Given** I want to search across all knowledge layers
+- **When** I run `.\scripts\search.ps1 -Query "search term" -Layers wiki,working`
+- **Then** results are returned with layer indicators [WIKI], [WORK], etc.
+- **And** each result shows filename, last modified date, and 2-line preview
+- **And** results are ranked by relevance (exact title > content > metadata matches)
+- **And** maximum 20 results are returned with option to see more
 
-**Given** I want to run health checks
-**When** I run `.\scripts\health-check.ps1 -Type all`
-**Then** the system scans all knowledge files for issues
-**And** findings are grouped by type: Missing Metadata, Broken Links, Stale Content, Duplicates, Orphans
-**And** each finding shows file path, issue type, severity, and suggested repair action
-**And** I can run targeted checks with `-Type metadata`, `-Type links`, or `-Type stale`
+**Scenario: Health check execution**
+- **Given** I want to run health checks
+- **When** I run `.\scripts\health-check.ps1 -Type all`
+- **Then** the system scans all knowledge files for issues
+- **And** findings are grouped by type: Missing Metadata, Broken Links, Stale Content, Duplicates, Orphans
+- **And** each finding shows file path, issue type, severity, and suggested repair action
+- **And** I can run targeted checks with `-Type metadata`, `-Type links`, or `-Type stale`
+
+**Error Scenarios:**
+- **Given** invalid parameters are provided to any script
+- **When** the script validates input
+- **Then** it displays usage help with examples of correct syntax
+- **And** it highlights the specific invalid parameter
+- **And** it exits with status code 1
+
+- **Given** a script encounters file system errors (permissions, disk full)
+- **When** the error occurs during execution
+- **Then** the script logs the full error to `logs/script-errors.log`
+- **And** it provides a user-friendly error message with suggested solutions
+- **And** it attempts to clean up any partial operations
 
 ### Story 0.4: Configuration Management System
 
-As Reno,
-I want a comprehensive configuration system that controls all system behavior,
+**User Story:**  
+As Reno,  
+I want a comprehensive configuration system that controls all system behavior,  
 So that I can customize the system to my specific workflow needs.
 
 **Acceptance Criteria:**
 
-**Given** the configuration system is initialized
-**When** I examine `config/pinky-config.yaml`
-**Then** I find these configurable settings with documented defaults:
+**Scenario: Default configuration structure**
+- **Given** the configuration system is initialized
+- **When** I examine `config/pinky-config.yaml`
+- **Then** I find these configurable settings with documented defaults:
 
 ```yaml
 # PinkyAndTheBrain Configuration
@@ -444,213 +578,317 @@ search:
   case_sensitive: false
 ```
 
-**Given** I want to customize system behavior
-**When** I edit the configuration file
-**Then** all scripts respect the updated settings immediately
-**And** invalid configurations show clear error messages with suggested fixes
-**And** I can validate the configuration with `.\scripts\validate-config.ps1`
+**Scenario: Configuration customization**
+- **Given** I want to customize system behavior
+- **When** I edit the configuration file
+- **Then** all scripts respect the updated settings immediately
+- **And** invalid configurations show clear error messages with suggested fixes
+- **And** I can validate the configuration with `.\scripts\validate-config.ps1`
 
-**Given** I have multiple projects with different needs
-**When** I configure project-specific settings
-**Then** I can override global settings per project
-**And** project-scoped operations only affect files tagged with that project
-**And** I can list all projects and their file counts with `.\scripts\list-projects.ps1`
+**Scenario: Project-specific settings**
+- **Given** I have multiple projects with different needs
+- **When** I configure project-specific settings
+- **Then** I can override global settings per project
+- **And** project-scoped operations only affect files tagged with that project
+- **And** I can list all projects and their file counts with `.\scripts\list-projects.ps1`
+
+**Error Scenarios:**
+- **Given** invalid YAML syntax in configuration file
+- **When** any script attempts to read configuration
+- **Then** it displays the specific YAML parsing error with line number
+- **And** it falls back to default settings with a warning
+- **And** it suggests running `.\scripts\validate-config.ps1` for detailed validation
 
 ### Story 0.5: Git Integration and Version Control
 
-As Reno,
-I want automatic version control for all knowledge files,
+**User Story:**  
+As Reno,  
+I want automatic version control for all knowledge files,  
 So that I can track changes and recover from mistakes.
 
 **Acceptance Criteria:**
 
-**Given** the system is initialized with Git integration
-**When** the setup completes
-**Then** a Git repository is initialized in the root directory
-**And** a `.gitignore` file excludes temporary files and system caches
-**And** an initial commit is created with the message "Initial PinkyAndTheBrain setup"
-**And** all template files, scripts, and configuration are committed
+**Scenario: Initial Git setup**
+- **Given** the system is initialized with Git integration
+- **When** the setup completes
+- **Then** a Git repository is initialized in the root directory
+- **And** a `.gitignore` file excludes temporary files and system caches
+- **And** an initial commit is created with the message "Initial PinkyAndTheBrain setup"
+- **And** all template files, scripts, and configuration are committed
 
-**Given** I perform knowledge management operations
-**When** I create, modify, or move knowledge files
-**Then** changes are automatically staged for commit
-**And** a commit is created with descriptive message: "Knowledge update: [operation] [filename]"
-**And** commits include both the changed file and any updated metadata
+**Scenario: Automatic change tracking**
+- **Given** I perform knowledge management operations
+- **When** I create, modify, or move knowledge files
+- **Then** changes are automatically staged for commit
+- **And** a commit is created with descriptive message: "Knowledge update: [operation] [filename]"
+- **And** commits include both the changed file and any updated metadata
 
-**Given** I want to review my knowledge evolution
-**When** I run `.\scripts\git-summary.ps1`
-**Then** I see a summary of recent commits grouped by operation type
-**And** I can view the history of any specific knowledge file
-**And** I can see which files have been modified but not yet committed
+**Scenario: Knowledge evolution review**
+- **Given** I want to review my knowledge evolution
+- **When** I run `.\scripts\git-summary.ps1`
+- **Then** I see a summary of recent commits grouped by operation type
+- **And** I can view the history of any specific knowledge file
+- **And** I can see which files have been modified but not yet committed
 
-**Given** I make a mistake and want to recover
-**When** I run `.\scripts\rollback.ps1 -Hours 24`
-**Then** I can see all changes made in the last 24 hours
-**And** I can selectively revert specific files or operations
-**And** the rollback operation itself is committed with a clear message
+**Scenario: Mistake recovery**
+- **Given** I make a mistake and want to recover
+- **When** I run `.\scripts\rollback.ps1 -Hours 24`
+- **Then** I can see all changes made in the last 24 hours
+- **And** I can selectively revert specific files or operations
+- **And** the rollback operation itself is committed with a clear message
+
+**Error Scenarios:**
+- **Given** Git is not installed or accessible
+- **When** the system attempts Git operations
+- **Then** it logs a warning about missing version control
+- **And** it continues operations without Git integration
+- **And** it suggests installing Git for full functionality
 
 ## Epic 1: Basic Knowledge Lifecycle
 
 Reno can capture knowledge, make basic triage decisions, and create working notes - completing the fundamental knowledge management workflow from input to usable state.
 
+**FRs covered:** [FR-001](#fr-001), [FR-003](#fr-003), [FR-004](#fr-004)  
+**Dependencies:** [Epic 0: System Foundation](#epic-0-system-foundation)  
+**Implementation Priority:** High - Core workflow functionality
+
 ### Story 1.1: Quick Knowledge Capture
 
-As Reno,
-I want to quickly capture knowledge items using specific PowerShell commands,
+**User Story:**  
+As Reno,  
+I want to quickly capture knowledge items using specific PowerShell commands,  
 So that I don't lose important information while in flow.
 
 **Acceptance Criteria:**
 
-**Given** I have information to capture (AI response, snippet, link, idea, note, or question)
-**When** I run `.\scripts\capture.ps1 -Type manual -Title "My Note" -Content "Note content"`
-**Then** the item is saved to `knowledge/inbox/` with filename `YYYY-MM-DD-HHMMSS-my-note.md`
-**And** the inbox template is applied with captured_date, source_type, and review_status populated
-**And** the capture process completes in under 10 seconds
-**And** the script returns the full file path for confirmation
+**Scenario: Basic manual capture**
+- **Given** I have information to capture (AI response, snippet, link, idea, note, or question)
+- **When** I run `.\scripts\capture.ps1 -Type manual -Title "My Note" -Content "Note content"`
+- **Then** the item is saved to `knowledge/inbox/` with filename `YYYY-MM-DD-HHMMSS-my-note.md`
+- **And** the inbox template is applied with captured_date, source_type, and review_status populated
+- **And** the capture process completes in under 10 seconds
+- **And** the script returns the full file path for confirmation
 
-**Given** I capture an item with source context (URL, conversation ID, document reference)
-**When** I run `.\scripts\capture.ps1 -Type web -Title "Article" -Url "https://example.com" -Content "My notes"`
-**Then** the source metadata is preserved in frontmatter: source_url, source_title, source_type: "web"
-**And** I can trace back to the original source by opening the URL from metadata
-**And** the source context is preserved in the "Source Context" section
+**Scenario: Web source capture with context**
+- **Given** I capture an item with source context (URL, conversation ID, document reference)
+- **When** I run `.\scripts\capture.ps1 -Type web -Title "Article" -Url "https://example.com" -Content "My notes"`
+- **Then** the source metadata is preserved in frontmatter: source_url, source_title, source_type: "web"
+- **And** I can trace back to the original source by opening the URL from metadata
+- **And** the source context is preserved in the "Source Context" section
 
-**Given** I capture multiple items in quick succession
-**When** I run multiple capture commands within seconds
-**Then** each gets a unique filename with millisecond-precision timestamp
-**And** no items are lost or overwritten due to filename conflicts
-**And** the system handles concurrent captures by using file locking mechanisms
+**Scenario: Rapid successive captures**
+- **Given** I capture multiple items in quick succession
+- **When** I run multiple capture commands within seconds
+- **Then** each gets a unique filename with millisecond-precision timestamp
+- **And** no items are lost or overwritten due to filename conflicts
+- **And** the system handles concurrent captures by using file locking mechanisms
 
-**Given** I want to capture from clipboard or stdin
-**When** I run `.\scripts\capture.ps1 -Type clipboard` or pipe content to the script
-**Then** the clipboard content or piped input is captured as the content body
-**And** I'm prompted to provide a title if not specified
-**And** the capture works even with large content (up to 10MB)
+**Scenario: Clipboard and stdin capture**
+- **Given** I want to capture from clipboard or stdin
+- **When** I run `.\scripts\capture.ps1 -Type clipboard` or pipe content to the script
+- **Then** the clipboard content or piped input is captured as the content body
+- **And** I'm prompted to provide a title if not specified
+- **And** the capture works even with large content (up to 10MB)
+
+**Error Scenarios:**
+- **Given** the inbox folder is not accessible or doesn't exist
+- **When** I attempt to capture content
+- **Then** the script displays a clear error about the missing inbox folder
+- **And** it suggests running the setup script to initialize the system
+- **And** it exits with status code 2
+
+- **Given** I provide content that exceeds the 10MB limit
+- **When** the capture script processes the content
+- **Then** it displays a warning about content size
+- **And** it offers to truncate the content or save to a separate file
+- **And** it logs the oversized capture attempt
 
 ### Story 1.2: Inbox Triage Workflow
 
-As Reno,
-I want to review inbox items using a structured PowerShell interface and assign them to specific knowledge layers,
+**User Story:**  
+As Reno,  
+I want to review inbox items using a structured PowerShell interface and assign them to specific knowledge layers,  
 So that captured information gets organized appropriately.
 
 **Acceptance Criteria:**
 
-**Given** I have items in my `knowledge/inbox/` folder
-**When** I run `.\scripts\triage.ps1`
-**Then** I see a numbered list of all inbox items with: filename, capture date, source type, and first 100 characters of content
-**And** I can select items by number (e.g., "1,3,5" or "1-5") and assign dispositions
-**And** Available dispositions are: [D]elete, [A]rchive, [R]aw, [W]orking, Wiki-[C]andidate
-**And** The interface shows keyboard shortcuts for each action
+**Scenario: Basic triage interface**
+- **Given** I have items in my `knowledge/inbox/` folder
+- **When** I run `.\scripts\triage.ps1`
+- **Then** I see a numbered list of all inbox items with: filename, capture date, source type, and first 100 characters of content
+- **And** I can select items by number (e.g., "1,3,5" or "1-5") and assign dispositions
+- **And** Available dispositions are: [D]elete, [A]rchive, [R]aw, [W]orking, Wiki-[C]andidate
+- **And** The interface shows keyboard shortcuts for each action
 
-**Given** I select "D" (delete) for inbox items
-**When** the action is processed
-**Then** I'm prompted to confirm deletion with a list of items to be deleted
-**And** confirmed items are permanently removed from the file system
-**And** I receive a summary: "Deleted 3 items: [filenames]"
-**And** the deletion is logged to `logs/triage-actions.log`
+**Scenario: Delete disposition**
+- **Given** I select "D" (delete) for inbox items
+- **When** the action is processed
+- **Then** I'm prompted to confirm deletion with a list of items to be deleted
+- **And** confirmed items are permanently removed from the file system
+- **And** I receive a summary: "Deleted 3 items: [filenames]"
+- **And** the deletion is logged to `logs/triage-actions.log`
 
-**Given** I select "A" (archive) for inbox items
-**When** the action is processed
-**Then** items are moved to `knowledge/archive/` folder
-**And** frontmatter is updated with: disposition: "archived", archive_date, archive_reason: "triaged_from_inbox"
-**And** archived items are excluded from default search results
-**And** I can optionally provide a custom archive reason
+**Scenario: Archive disposition**
+- **Given** I select "A" (archive) for inbox items
+- **When** the action is processed
+- **Then** items are moved to `knowledge/archive/` folder
+- **And** frontmatter is updated with: disposition: "archived", archive_date, archive_reason: "triaged_from_inbox"
+- **And** archived items are excluded from default search results
+- **And** I can optionally provide a custom archive reason
 
-**Given** I select "R", "W", or "C" for inbox items
-**When** the action is processed
-**Then** items are moved to `knowledge/raw/`, `knowledge/working/`, or remain in inbox with wiki-candidate flag
-**And** frontmatter disposition field is updated accordingly
-**And** original capture metadata (captured_date, source_type, etc.) is preserved
-**And** moved files retain their original filename structure
+**Scenario: Promote to knowledge layers**
+- **Given** I select "R", "W", or "C" for inbox items
+- **When** the action is processed
+- **Then** items are moved to `knowledge/raw/`, `knowledge/working/`, or remain in inbox with wiki-candidate flag
+- **And** frontmatter disposition field is updated accordingly
+- **And** original capture metadata (captured_date, source_type, etc.) is preserved
+- **And** moved files retain their original filename structure
 
-**Given** I want to batch process similar items
-**When** I use filters like `.\scripts\triage.ps1 -SourceType web` or `.\scripts\triage.ps1 -OlderThan 7`
-**Then** only matching items are shown for triage
-**And** I can apply the same disposition to all filtered items with "all" command
-**And** filters can be combined: `-SourceType conversation -OlderThan 3`
+**Scenario: Batch processing with filters**
+- **Given** I want to batch process similar items
+- **When** I use filters like `.\scripts\triage.ps1 -SourceType web` or `.\scripts\triage.ps1 -OlderThan 7`
+- **Then** only matching items are shown for triage
+- **And** I can apply the same disposition to all filtered items with "all" command
+- **And** filters can be combined: `-SourceType conversation -OlderThan 3`
+
+**Error Scenarios:**
+- **Given** I attempt to delete items but lack file system permissions
+- **When** the deletion is processed
+- **Then** the script identifies which files couldn't be deleted with specific permission errors
+- **And** it continues processing other items that can be deleted
+- **And** it provides instructions for resolving permission issues
+
+- **Given** the target folder for a disposition doesn't exist
+- **When** I try to move items to that folder
+- **Then** the script creates the missing folder with appropriate permissions
+- **And** it logs the folder creation action
+- **And** it continues with the move operation
 
 ### Story 1.3: Working Note Creation and Management
 
-As Reno,
-I want to create structured working notes using templates and PowerShell commands,
+**User Story:**  
+As Reno,  
+I want to create structured working notes using templates and PowerShell commands,  
 So that I can develop ideas with proper metadata and source tracking.
 
 **Acceptance Criteria:**
 
-**Given** I want to create a new working note from scratch
-**When** I run `.\scripts\create-working-note.ps1 -Title "My Topic" -Project "research"`
-**Then** a new file is created in `knowledge/working/` using the working-note template
-**And** the filename is `my-topic.md` (title converted to kebab-case)
-**And** frontmatter includes: status: "draft", confidence: "low", last_updated: timestamp, project: "research"
-**And** all template sections are present: Current Interpretation, Evidence, Connections, Tensions, Open Questions, Next Moves, Source Pointers
+**Scenario: New working note from scratch**
+- **Given** I want to create a new working note from scratch
+- **When** I run `.\scripts\create-working-note.ps1 -Title "My Topic" -Project "research"`
+- **Then** a new file is created in `knowledge/working/` using the working-note template
+- **And** the filename is `my-topic.md` (title converted to kebab-case)
+- **And** frontmatter includes: status: "draft", confidence: "low", last_updated: timestamp, project: "research"
+- **And** all template sections are present: Current Interpretation, Evidence, Connections, Tensions, Open Questions, Next Moves, Source Pointers
 
-**Given** I create a working note from an inbox or raw item
-**When** I run `.\scripts\promote-to-working.ps1 -SourceFile "knowledge/inbox/my-item.md" -Title "Working Topic"`
-**Then** a new working note is generated with the source item's content in the Evidence section
-**And** the source item's metadata is automatically linked in the Source Pointers section
-**And** the original item is marked with promoted_to: "knowledge/working/working-topic.md"
-**And** the working note includes source_list: ["knowledge/inbox/my-item.md"] in frontmatter
+**Scenario: Working note from existing content**
+- **Given** I create a working note from an inbox or raw item
+- **When** I run `.\scripts\promote-to-working.ps1 -SourceFile "knowledge/inbox/my-item.md" -Title "Working Topic"`
+- **Then** a new working note is generated with the source item's content in the Evidence section
+- **And** the source item's metadata is automatically linked in the Source Pointers section
+- **And** the original item is marked with promoted_to: "knowledge/working/working-topic.md"
+- **And** the working note includes source_list: ["knowledge/inbox/my-item.md"] in frontmatter
 
-**Given** I have a working note with required metadata fields
-**When** I save changes to the note (either manually or through scripts)
-**Then** the last_updated timestamp is automatically updated by a file watcher or save hook
-**And** the review_trigger is recalculated based on configured review cadence (default 30 days)
-**And** metadata validation ensures required fields (status, confidence, last_updated) are present
-**And** invalid metadata values trigger warnings with suggested corrections
+**Scenario: Automatic metadata management**
+- **Given** I have a working note with required metadata fields
+- **When** I save changes to the note (either manually or through scripts)
+- **Then** the last_updated timestamp is automatically updated by a file watcher or save hook
+- **And** the review_trigger is recalculated based on configured review cadence (default 30 days)
+- **And** metadata validation ensures required fields (status, confidence, last_updated) are present
+- **And** invalid metadata values trigger warnings with suggested corrections
 
-**Given** I update a working note over time
-**When** I make changes to any section
-**Then** I can track the evolution through Git history with automatic commits
-**And** the structured sections help me organize: new evidence, changed interpretations, resolved questions
-**And** I can run `.\scripts\working-note-summary.ps1 -File "my-topic.md"` to see a change summary
-**And** overdue review triggers (past review_trigger date) are flagged in health checks
+**Scenario: Working note evolution tracking**
+- **Given** I update a working note over time
+- **When** I make changes to any section
+- **Then** I can track the evolution through Git history with automatic commits
+- **And** the structured sections help me organize: new evidence, changed interpretations, resolved questions
+- **And** I can run `.\scripts\working-note-summary.ps1 -File "my-topic.md"` to see a change summary
+- **And** overdue review triggers (past review_trigger date) are flagged in health checks
 
-**Given** I want to manage multiple working notes
-**When** I run `.\scripts\list-working-notes.ps1`
-**Then** I see all working notes with: title, status, confidence, last_updated, days until review
-**And** I can filter by status: `.\scripts\list-working-notes.ps1 -Status active`
-**And** I can sort by various fields: `-SortBy last_updated`, `-SortBy confidence`
-**And** overdue notes (past review_trigger) are highlighted in red
+**Scenario: Working note management overview**
+- **Given** I want to manage multiple working notes
+- **When** I run `.\scripts\list-working-notes.ps1`
+- **Then** I see all working notes with: title, status, confidence, last_updated, days until review
+- **And** I can filter by status: `.\scripts\list-working-notes.ps1 -Status active`
+- **And** I can sort by various fields: `-SortBy last_updated`, `-SortBy confidence`
+- **And** overdue notes (past review_trigger) are highlighted in red
+
+**Error Scenarios:**
+- **Given** I try to create a working note with a title that already exists
+- **When** the creation script runs
+- **Then** it suggests alternative titles with numbered suffixes
+- **And** it asks if I want to open the existing note instead
+- **And** it prevents accidental overwrites of existing content
+
+- **Given** the source file for promotion is corrupted or has invalid frontmatter
+- **When** I run the promotion script
+- **Then** it extracts whatever content is readable
+- **And** it creates the working note with a warning about source issues
+- **And** it logs the corruption details for manual review
 
 ## Epic 2: Knowledge Quality & Promotion
 
 Reno can promote reviewed working knowledge into verified wiki content with proper validation, metadata, and source tracking.
 
+**FRs covered:** [FR-005](#fr-005), [FR-006](#fr-006), [FR-011](#fr-011)  
+**Dependencies:** [Epic 1: Basic Knowledge Lifecycle](#epic-1-basic-knowledge-lifecycle)  
+**Implementation Priority:** High - Quality assurance for knowledge base
+
 ### Story 2.1: Wiki Promotion Workflow
 
-As Reno,
-I want to promote reviewed working knowledge into wiki-ready Markdown,
+**User Story:**  
+As Reno,  
+I want to promote reviewed working knowledge into wiki-ready Markdown,  
 So that valuable insights become permanent, searchable knowledge.
 
 **Acceptance Criteria:**
 
-**Given** I have a working note that I want to promote to wiki
-**When** I initiate the promotion workflow
-**Then** the system checks if a canonical wiki page already exists for this topic
-**And** I am warned if potential duplicates are found
-**And** I can choose to update existing page, merge content, or create new page
+**Scenario: Duplicate detection during promotion**
+- **Given** I have a working note that I want to promote to wiki
+- **When** I initiate the promotion workflow
+- **Then** the system checks if a canonical wiki page already exists for this topic
+- **And** I am warned if potential duplicates are found
+- **And** I can choose to update existing page, merge content, or create new page
 
-**Given** I proceed with wiki promotion after duplicate check
-**When** the promotion is processed
-**Then** a new wiki page is created with proper wiki template structure
-**And** all source pointers from the working note are preserved
-**And** the working note is marked as "promoted" with a link to the wiki page
+**Scenario: Successful wiki promotion**
+- **Given** I proceed with wiki promotion after duplicate check
+- **When** the promotion is processed
+- **Then** a new wiki page is created with proper wiki template structure
+- **And** all source pointers from the working note are preserved
+- **And** the working note is marked as "promoted" with a link to the wiki page
 
-**Given** I promote content that contains contradictions or uncertainties
-**When** the wiki page is created
-**Then** contradictions are clearly marked and preserved rather than resolved automatically
-**And** uncertainty levels are indicated in the content
-**And** competing claims reference their respective sources
+**Scenario: Handling contradictions and uncertainties**
+- **Given** I promote content that contains contradictions or uncertainties
+- **When** the wiki page is created
+- **Then** contradictions are clearly marked and preserved rather than resolved automatically
+- **And** uncertainty levels are indicated in the content
+- **And** competing claims reference their respective sources
 
-**Given** I promote working knowledge with insufficient sources
-**When** the promotion workflow runs
-**Then** I am prompted to add missing provenance before completion
-**And** the promotion can be saved as draft until sources are added
-**And** unsupported claims are flagged for review
+**Scenario: Source validation requirement**
+- **Given** I promote working knowledge with insufficient sources
+- **When** the promotion workflow runs
+- **Then** I am prompted to add missing provenance before completion
+- **And** the promotion can be saved as draft until sources are added
+- **And** unsupported claims are flagged for review
+
+**Error Scenarios:**
+- **Given** the working note has corrupted or missing frontmatter
+- **When** I attempt promotion
+- **Then** the system identifies specific missing metadata fields
+- **And** it provides a template to fix the frontmatter
+- **And** it prevents promotion until required fields are present
+
+- **Given** the wiki folder is not accessible during promotion
+- **When** the promotion attempts to create the wiki page
+- **Then** it displays a clear error about folder permissions
+- **And** it suggests checking folder permissions and disk space
+- **And** it preserves the promotion attempt for retry
 
 ### Story 2.2: Wiki Metadata Management
 
-As Reno,
-I want to mark wiki knowledge with comprehensive metadata,
+**User Story:**  
+As Reno,  
+I want to mark wiki knowledge with comprehensive metadata,  
 So that I can track status, confidence, sources, and review schedules.
 
 **Acceptance Criteria:**
