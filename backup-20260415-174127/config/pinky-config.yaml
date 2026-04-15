@@ -1,0 +1,47 @@
+project: PinkyAndTheBrain
+version: 0.1.0
+runtime: powershell
+
+paths:
+  knowledge_root: knowledge
+  inbox: knowledge/inbox
+  raw: knowledge/raw
+  working: knowledge/working
+  wiki: knowledge/wiki
+  archive: knowledge/archive
+  reviews: knowledge/reviews
+  schemas: knowledge/schemas
+  templates: templates
+  handoffs: .ai/handoffs
+  logs: logs
+
+review:
+  working_review_days: 30
+  wiki_review_days: 90
+  stale_after_days: 180
+
+retrieval:
+  include_archive_by_default: false
+  require_sources_for_wiki: true
+
+privacy:
+  private_excluded_from_handoffs: true
+  do_not_promote_blocks_wiki: true
+
+health:
+  min_content_characters: 100
+  required_working_fields:
+    - status
+    - confidence
+    - last_updated
+    - review_trigger
+    - source_list
+  required_wiki_fields:
+    - status
+    - owner
+    - confidence
+    - last_updated
+    - last_verified
+    - review_trigger
+    - source_list
+
