@@ -1,5 +1,5 @@
 # generated: 2026-04-15T00:00:00.000Z
-# last_updated: 2026-04-15T00:00:00.000Z
+# last_updated: 2026-04-16T00:00:00.001Z
 # project: PinkyAndTheBrain
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-15T00:00:00.000Z
-last_updated: 2026-04-15T00:00:00.000Z
+last_updated: 2026-04-16T00:00:00.001Z
 project: PinkyAndTheBrain
 project_key: NOKEY
 tracking_system: file-system
@@ -44,8 +44,8 @@ story_location: _bmad-output/implementation-artifacts
 development_status:
   # Epic 0: System Foundation
   epic-0: in-progress
-  0-1-initial-system-setup-and-folder-structure: ready-for-dev
-  0-2-template-system-creation: backlog
+  0-1-initial-system-setup-and-folder-structure: done
+  0-2-template-system-creation: done
   0-3-powershell-script-implementation: backlog
   0-4-configuration-management-system: backlog
   0-5-git-integration-and-version-control: backlog

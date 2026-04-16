@@ -12,7 +12,7 @@ project: ""
 domain: ""
 private: false
 do_not_promote: false
-ai_content_reviewed: false
+exclude_from_ai: false
 ---
 
 # <title>

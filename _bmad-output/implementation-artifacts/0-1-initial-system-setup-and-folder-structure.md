@@ -1,6 +1,6 @@
 # Story 0.1: Initial System Setup and Folder Structure
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -78,14 +78,25 @@ config/
   - [x] Create pinky-config.yaml with all required settings
   - [x] Add schema definitions in schemas/ folder
   - [x] Create .gitignore file
-- [ ] Implement backup and rollback functionality (AC: Existing directory protection)
-  - [ ] Detect existing content
-  - [ ] Create timestamped backups
-  - [ ] Add confirmation prompts
-- [ ] Add comprehensive error handling (AC: Error Scenarios)
-  - [ ] Disk space validation
-  - [ ] Permission error handling
-  - [ ] Cleanup on failure
+- [x] Implement backup and rollback functionality (AC: Existing directory protection)
+  - [x] Detect existing content
+  - [x] Create timestamped backups
+  - [x] Add confirmation prompts
+- [x] Add comprehensive error handling (AC: Error Scenarios)
+  - [x] Disk space validation
+  - [x] Permission error handling
+  - [x] Cleanup on failure
+
+### Review Findings
+
+- [x] [Review][Decision] Disk space test — resolved: added failure-path test using non-existent drive (exit 1 assertion)
+- [x] [Review][Decision] Permission error test — resolved: added icacls-based write denial test (exit 1 assertion)
+- [x] [Review][Patch] Empty backup dir silently succeeds rollback — fixed: added empty-check that throws
+- [x] [Review][Patch] Remove-Item before Copy-Item risks broken state — fixed: rename-before-copy pattern with rollback on failure
+- [x] [Review][Patch] Dead `$scriptBlock` variable and misleading test names — fixed: removed dead code, renamed tests
+- [x] [Review][Patch] Write-Log in catch block could throw — fixed: wrapped with try/catch, used IO.Path.Combine for log paths
+- [x] [Review][Defer] Retry-without-recreating logic is pre-existing — script is idempotent via `Ensure-Directory`/`Ensure-File`, not introduced by this diff — deferred, pre-existing
+- [x] [Review][Defer] `$Root` fragility when script is moved/symlinked — `$Root = $PSScriptRoot/..` is pre-existing for all operations — deferred, pre-existing
 
 ## Dev Notes
 
@@ -183,6 +194,9 @@ Claude Sonnet 4
 - Added a usable PowerShell MVP command surface: setup, capture, triage, search, health-check, and Obsidian index sync.
 - Added script-friendly templates, config, `.gitignore`, logs placeholder, and per-folder `index.md` files.
 - Aligned the MVP runtime decision on PowerShell and converted knowledge schemas to YAML frontmatter.
+- Added `-Rollback`/`-BackupPath` parameters and `Restore-FromBackup` function; rollback hint printed after backup creation.
+- Replaced stub Pester tests with real tests covering backup creation, rollback restore, disk space exit code, and permission handling.
+- All 6 Pester tests pass (0 failures).
 
 ### File List
 
@@ -201,3 +215,8 @@ Claude Sonnet 4
 - `knowledge/*/index.md`
 - `knowledge/schemas/wiki-page-template.md`
 - `knowledge/schemas/working-note-template.md`
+- `tests/setup-system.Tests.ps1`
+
+## Change Log
+
+- 2026-04-16: Completed tasks 3 & 4 — added rollback option (`-Rollback`/`-BackupPath` params + `Restore-FromBackup` function), replaced stub tests with real Pester tests covering backup/rollback/error handling. All 6 tests pass.

@@ -1,13 +1,15 @@
 param(
     [switch]$Force,
     [switch]$SkipBackup,
-    [string]$RootPath = $null
+    [string]$RootPath = $null,
+    [switch]$Rollback,
+    [string]$BackupPath = $null
 )
 
 $ErrorActionPreference = "Stop"
 $Root = if ($RootPath) { $RootPath } else { (Resolve-Path (Join-Path $PSScriptRoot "..")).Path }
-$LogDir = Join-Path $Root "logs"
-$LogPath = Join-Path $LogDir "setup.log"
+$LogDir = [System.IO.Path]::Combine($Root, "logs")
+$LogPath = [System.IO.Path]::Combine($LogDir, "setup.log")
 
 function Write-Log {
     param([string]$Message)
@@ -102,8 +104,9 @@ function Backup-ExistingContent {
     }
     
     Write-Host "Backup created at: $backupDir" -ForegroundColor Green
+    Write-Host "  To rollback: .\scripts\setup-system.ps1 -Rollback -BackupPath `"$backupDir`"" -ForegroundColor DarkGray
     Write-Log "Backup completed successfully"
-    
+
     # Ask for confirmation unless Force is specified
     if (-not $Force) {
         $response = Read-Host "Continue with setup? Existing files will be updated/overwritten. (y/N)"
@@ -115,6 +118,50 @@ function Backup-ExistingContent {
     }
     
     return $backupDir
+}
+
+function Restore-FromBackup {
+    param([string]$RootPath, [string]$BackupDir)
+
+    if (-not (Test-Path $BackupDir)) {
+        throw "Backup directory not found: $BackupDir"
+    }
+
+    $folders = Get-ChildItem -Path $BackupDir -Directory -ErrorAction SilentlyContinue
+    if (-not $folders -or $folders.Count -eq 0) {
+        throw "Backup directory is empty — nothing to restore: $BackupDir"
+    }
+
+    Write-Host "Restoring from backup: $BackupDir" -ForegroundColor Yellow
+    Write-Log "Rollback started from: $BackupDir"
+
+    foreach ($folder in $folders) {
+        $dest = Join-Path $RootPath $folder.Name
+        if (Test-Path $dest) {
+            # Rename before copy so data is recoverable if copy fails
+            $tempName = "$dest.rollback-tmp"
+            Rename-Item $dest $tempName -Force -ErrorAction Stop
+            try {
+                Copy-Item $folder.FullName $dest -Recurse -Force -ErrorAction Stop
+                Remove-Item $tempName -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                # Restore the renamed original on copy failure
+                if (Test-Path $tempName) {
+                    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue }
+                    Rename-Item $tempName $dest -Force -ErrorAction SilentlyContinue
+                }
+                throw
+            }
+        }
+        else {
+            Copy-Item $folder.FullName $dest -Recurse -Force -ErrorAction Stop
+        }
+        Write-Log "Restored $($folder.Name)"
+    }
+
+    Write-Host "Rollback complete. Files restored from backup." -ForegroundColor Green
+    Write-Log "Rollback completed successfully"
 }
 
 function Ensure-Directory {
@@ -138,6 +185,24 @@ function Ensure-File {
     if ($parent) { Ensure-Directory $parent }
     Set-Content -Path $Path -Value $Content -Encoding UTF8
     Write-Log "Wrote file $Path"
+}
+
+# Handle rollback mode
+if ($Rollback) {
+    if (-not $BackupPath) {
+        Write-Host "Error: -BackupPath is required when using -Rollback" -ForegroundColor Red
+        exit 1
+    }
+    $resolvedBackup = if ([System.IO.Path]::IsPathRooted($BackupPath)) { $BackupPath } else { Join-Path $Root $BackupPath }
+    try {
+        Restore-FromBackup -RootPath $Root -BackupDir $resolvedBackup
+        exit 0
+    }
+    catch {
+        Write-Host "Rollback failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Rollback failed: $($_.Exception.Message)"
+        exit 1
+    }
 }
 
 try {
@@ -194,13 +259,13 @@ try {
 }
 catch {
     Write-Host "Setup failed: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Log "Setup failed: $($_.Exception.Message)"
-    
+    try { Write-Log "Setup failed: $($_.Exception.Message)" } catch {}
+
     # Cleanup on failure
     Write-Host "Cleaning up partial installation..." -ForegroundColor Yellow
     $foldersToCleanup = @("knowledge", "scripts", "templates", ".ai", "config")
     foreach ($folder in $foldersToCleanup) {
-        $folderPath = Join-Path $Root $folder
+        $folderPath = [System.IO.Path]::Combine($Root, $folder)
         if (Test-Path $folderPath) {
             try {
                 # Only remove if it was created by this script (check if it's empty or contains only our files)
@@ -208,15 +273,15 @@ catch {
                 $ourFiles = $items | Where-Object { $_.Name -match '^(index\.md|pinky-config\.yaml)$' }
                 if ($items.Count -eq $ourFiles.Count) {
                     Remove-Item $folderPath -Recurse -Force -ErrorAction SilentlyContinue
-                    Write-Log "Cleaned up $folderPath"
+                    try { Write-Log "Cleaned up $folderPath" } catch {}
                 }
             }
             catch {
-                Write-Log "Failed to cleanup $folderPath`: $($_.Exception.Message)"
+                try { Write-Log "Failed to cleanup $folderPath`: $($_.Exception.Message)" } catch {}
             }
         }
     }
-    
+
     Write-Host "Setup failed. Check logs at: $LogPath" -ForegroundColor Red
     exit 1
 }

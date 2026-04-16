@@ -71,44 +71,73 @@ Describe "setup-system.ps1" {
             # Arrange
             $testDir = Join-Path $script:TestRoot "backup-test"
             New-Item -ItemType Directory -Path $testDir -Force | Out-Null
-            
+
             # Create existing file
             New-Item -ItemType Directory -Path (Join-Path $testDir "knowledge") -Force | Out-Null
             Set-Content -Path (Join-Path $testDir "knowledge/existing-file.txt") -Value "existing content"
-            
+
+            # Act - Use Force flag and specify root path
+            & $script:SetupScript -Force -RootPath $testDir
+
+            # Assert - @() forces array so [0] returns the item, not its first character
+            $backupDirs = @(Get-ChildItem -Path $testDir -Directory -Name "backup-*")
+            $backupDirs.Count | Should BeGreaterThan 0
+
+            $backupPath = Join-Path $testDir $backupDirs[0]
+
+            # Original file should be preserved in backup
+            Test-Path (Join-Path $backupPath "knowledge/existing-file.txt") | Should Be $true
+        }
+        
+        It "Should exit non-zero when disk space check fails" {
+            # Non-existent drive triggers pre-flight failure and exit 1
+            & $script:SetupScript -Force -SkipBackup -RootPath "Q:\nonexistent" 2>&1 | Out-Null
+            $LASTEXITCODE | Should Be 1
+        }
+
+        It "Should provide rollback option after backup creation" {
+            # Arrange
+            $testDir = Join-Path $script:TestRoot "rollback-test"
+            New-Item -ItemType Directory -Path $testDir -Force | Out-Null
+
+            # Create existing content so backup is triggered
+            New-Item -ItemType Directory -Path (Join-Path $testDir "knowledge") -Force | Out-Null
+            Set-Content -Path (Join-Path $testDir "knowledge/original.txt") -Value "original content"
+
+            # Act - run setup (Force skips confirmation prompt)
+            & $script:SetupScript -Force -RootPath $testDir
+
+            # @() forces array so [0] returns the item, not its first character
+            $backupDirs = @(Get-ChildItem -Path $testDir -Directory -Name "backup-*")
+            $backupDirs.Count | Should BeGreaterThan 0
+            $backupPath = Join-Path $testDir $backupDirs[0]
+
+            # Overwrite the file so we can verify rollback restores it
+            Set-Content -Path (Join-Path $testDir "knowledge/original.txt") -Value "overwritten"
+
+            # Verify rollback restores original file
+            & $script:SetupScript -Rollback -BackupPath $backupPath -RootPath $testDir
+            $LASTEXITCODE | Should Be 0
+            Test-Path (Join-Path $testDir "knowledge/original.txt") | Should Be $true
+            (Get-Content (Join-Path $testDir "knowledge/original.txt") -Raw).Trim() | Should Be "original content"
+        }
+
+        It "Should exit non-zero when write permission check fails" {
+            # Create directory then deny write access
+            $testDir = Join-Path $script:TestRoot "perm-denied"
+            New-Item -ItemType Directory -Path $testDir -Force | Out-Null
+
             try {
-                # Act - Use Force flag and specify root path
-                & $script:SetupScript -Force -RootPath $testDir
-                
-                # Assert
-                # Should have created a backup directory
-                $backupDirs = Get-ChildItem -Path $testDir -Directory -Name "backup-*"
-                $backupDirs.Count | Should BeGreaterThan 0
-                
-                # Debug: Check what's in the backup
-                $backupDir = $backupDirs[0]
-                $backupPath = Join-Path $testDir $backupDir
-                Write-Host "Backup directory contents:" -ForegroundColor Cyan
-                Get-ChildItem -Path $backupPath -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
-                
-                # Original file should be preserved in backup
-                Test-Path (Join-Path $backupPath "knowledge/existing-file.txt") | Should Be $true
+                # Deny write permission for current user
+                icacls $testDir /deny "${env:USERNAME}:(W,M)" /T /Q 2>&1 | Out-Null
+
+                & $script:SetupScript -Force -SkipBackup -RootPath $testDir 2>&1 | Out-Null
+                $LASTEXITCODE | Should Be 1
             }
             finally {
-                # No need to pop location
+                # Restore write permission for cleanup
+                icacls $testDir /grant "${env:USERNAME}:(F)" /T /Q 2>&1 | Out-Null
             }
-        }
-        
-        It "Should fail gracefully with insufficient disk space" {
-            # This test would require mocking disk space checks
-            # For now, we'll test that the error handling structure exists
-            $true | Should Be $true
-        }
-        
-        It "Should handle permission errors gracefully" {
-            # This test would require creating permission-denied scenarios
-            # For now, we'll test that the error handling structure exists
-            $true | Should Be $true
         }
     }
 }
