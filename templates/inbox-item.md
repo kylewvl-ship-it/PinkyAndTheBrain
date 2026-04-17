@@ -1,23 +1,23 @@
 ---
-title: "<title>"
-captured_date: "<timestamp>"
-source_type: "manual"
-source_url: ""
-source_title: ""
+title: "{{title}}"
+captured_date: "{{timestamp}}"
+source_type: "{{source_type}}"
+source_url: "{{source_url}}"
+source_title: "{{source_title}}"
 review_status: "pending"
 disposition: "inbox"
-project: ""
+project: "{{project_name_optional}}"
 private: false
 do_not_promote: false
 ---
 
-# <title>
+# {{title}}
 
-<content>
+{{content}}
 
 ## Source Context
 
-<source details>
+{{source_url}}
 
 ## Next Actions
 

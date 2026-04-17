@@ -1,25 +1,28 @@
 ---
-title: "<conversation title>"
-captured_date: "<timestamp>"
+title: "{{title}}"
+captured_date: "{{timestamp}}"
 source_type: "conversation"
 source_url: ""
 source_title: ""
 review_status: "pending"
 promotion_blocked: true
 ai_derived: true
+ai_service: "{{ai_service}}"
+conversation_date: "{{conversation_date}}"
+import_date: "{{import_date}}"
 private: false
 do_not_promote: false
 ---
 
-# <conversation title>
+# {{title}}
 
 ## Source Context
 
-Where this conversation came from, who participated, and why it matters.
+AI conversation imported from {{ai_service}} on {{conversation_date}}.
 
 ## Raw Capture
 
-Paste or import the conversation content here.
+{{content}}
 
 ## Candidate Knowledge
 

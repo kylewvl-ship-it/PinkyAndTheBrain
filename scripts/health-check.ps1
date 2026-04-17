@@ -1,199 +1,517 @@
+#!/usr/bin/env pwsh
+# PinkyAndTheBrain Health Check Script
+# System validation and diagnostics for knowledge base
+
 param(
-    [ValidateSet("all", "metadata", "links", "stale", "sources", "orphans")]
+    [ValidateSet("all", "metadata", "links", "stale", "duplicates", "orphans")]
     [string]$Type = "all",
-    [switch]$IncludeArchive,
-    [switch]$WriteReport
+    
+    [switch]$Fix,
+    [switch]$WhatIf,
+    [switch]$Help
 )
 
-$ErrorActionPreference = "Stop"
-$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$KnowledgeRoot = Join-Path $Root "knowledge"
-$ReviewsDir = Join-Path $KnowledgeRoot "reviews"
-$LogDir = Join-Path $Root "logs"
-$Now = Get-Date
+# Import common functions with validation
+if (!(Test-Path "$PSScriptRoot/lib/common.ps1")) {
+    Write-Error "Required dependency not found: $PSScriptRoot/lib/common.ps1"
+    exit 2
+}
+. "$PSScriptRoot/lib/common.ps1"
 
-function Get-Frontmatter {
-    param([string]$Path)
-    $lines = Get-Content -Path $Path
-    $result = @{}
-    if ($lines.Count -lt 3 -or $lines[0] -ne "---") { return $result }
+if ($Help) {
+    Show-Usage "health-check.ps1" "Validate knowledge base health and integrity" @(
+        ".\scripts\health-check.ps1"
+        ".\scripts\health-check.ps1 -Type metadata"
+        ".\scripts\health-check.ps1 -Type links -Fix"
+        ".\scripts\health-check.ps1 -Type stale -WhatIf"
+    )
+    exit 0
+}
 
-    for ($i = 1; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -eq "---") { break }
-        if ($lines[$i] -match '^\s*([^:#]+):\s*(.*)\s*$') {
-            $key = $matches[1].Trim()
-            $value = $matches[2].Trim().Trim('"')
-            if ([string]::IsNullOrWhiteSpace($value) -and ($i + 1) -lt $lines.Count -and $lines[$i + 1] -match '^\s+-\s+') {
-                $value = "__list__"
+function Test-Metadata {
+    param([hashtable]$Config)
+    
+    $findings = @()
+    $vaultRoot = $Config.system.vault_root
+    
+    Write-Host "🔍 Checking metadata integrity..." -ForegroundColor Cyan
+    
+    # Check all knowledge files
+    $folders = @($Config.folders.inbox, $Config.folders.raw, $Config.folders.working, $Config.folders.wiki, $Config.folders.archive)
+    
+    foreach ($folder in $folders) {
+        $folderPath = "$vaultRoot/$folder"
+        if (!(Test-Path $folderPath)) { continue }
+        
+        $files = Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse
+        
+        foreach ($file in $files) {
+            try {
+                $content = Get-Content $file.FullName -Raw
+                $frontmatter = @{}
+                
+                # Check if frontmatter exists
+                if ($content -notmatch '(?s)^---\s*\n(.*?)\n---') {
+                    $findings += [PSCustomObject]@{
+                        Type = "Missing Metadata"
+                        Severity = "High"
+                        File = $file.FullName.Replace($PWD.Path + "\", "")
+                        Issue = "No frontmatter found"
+                        Suggestion = "Add frontmatter with required fields"
+                    }
+                    continue
+                }
+                
+                # Parse frontmatter
+                $yamlContent = $matches[1]
+                $yamlContent -split "`n" | ForEach-Object {
+                    if ($_ -match '^(\w+):\s*(.*)$') {
+                        $frontmatter[$matches[1]] = $matches[2].Trim('"')
+                    }
+                }
+                
+                # Check required fields based on folder
+                $requiredFields = switch ($folder) {
+                    $Config.folders.inbox { @("captured_date", "source_type", "review_status") }
+                    $Config.folders.working { @("status", "confidence", "last_updated") }
+                    $Config.folders.wiki { @("status", "confidence", "last_updated", "last_verified") }
+                    default { @() }
+                }
+                
+                foreach ($field in $requiredFields) {
+                    if (!$frontmatter.ContainsKey($field) -or [string]::IsNullOrEmpty($frontmatter[$field])) {
+                        $findings += [PSCustomObject]@{
+                            Type = "Missing Metadata"
+                            Severity = "Medium"
+                            File = $file.FullName.Replace($PWD.Path + "\", "")
+                            Issue = "Missing required field: $field"
+                            Suggestion = "Add $field to frontmatter"
+                        }
+                    }
+                }
+                
+                # Check content length
+                $contentBody = $content -replace '(?s)^---.*?---\s*', ''
+                if ($contentBody.Trim().Length -lt 50) {
+                    $findings += [PSCustomObject]@{
+                        Type = "Missing Metadata"
+                        Severity = "Low"
+                        File = $file.FullName.Replace($PWD.Path + "\", "")
+                        Issue = "Content too short (< 50 characters)"
+                        Suggestion = "Add more content or consider deletion"
+                    }
+                }
             }
-            $result[$key] = $value
+            catch {
+                $findings += [PSCustomObject]@{
+                    Type = "Missing Metadata"
+                    Severity = "High"
+                    File = $file.FullName.Replace($PWD.Path + "\", "")
+                    Issue = "Failed to parse file: $($_.Exception.Message)"
+                    Suggestion = "Check file format and encoding"
+                }
+            }
         }
     }
-    return $result
+    
+    return $findings
 }
 
-function Add-Finding {
-    param(
-        [System.Collections.Generic.List[object]]$Findings,
-        [string]$FindingType,
-        [string]$Path,
-        [string]$Severity,
-        [string]$Rule,
-        [string]$Action
-    )
-    $Findings.Add([PSCustomObject]@{
-        finding_type = $FindingType
-        file_path = $Path
-        severity = $Severity
-        rule_triggered = $Rule
-        suggested_repair_action = $Action
-    }) | Out-Null
-}
-
-function Get-MarkdownFiles {
-    $files = Get-ChildItem -Path $KnowledgeRoot -Recurse -Filter "*.md" -File
-    if (-not $IncludeArchive) {
-        $archivePath = Join-Path $KnowledgeRoot "archive"
-        $files = $files | Where-Object { -not $_.FullName.StartsWith($archivePath, [StringComparison]::OrdinalIgnoreCase) }
-    }
-    return $files
-}
-
-function Resolve-WikiLink {
-    param(
-        [string]$Target,
-        [System.IO.FileInfo[]]$Files
-    )
-    $clean = ($Target -split '\|')[0].Trim()
-    $clean = ($clean -split '#')[0].Trim()
-    if ([string]::IsNullOrWhiteSpace($clean)) { return $true }
-    $normalized = $clean -replace '/', [System.IO.Path]::DirectorySeparatorChar
-    foreach ($file in $Files) {
-        if ($file.BaseName -ieq $normalized -or $file.FullName.EndsWith("$normalized.md", [StringComparison]::OrdinalIgnoreCase)) {
-            return $true
+function Test-Links {
+    param([hashtable]$Config)
+    
+    $findings = @()
+    $vaultRoot = $Config.system.vault_root
+    
+    Write-Host "🔗 Checking internal links..." -ForegroundColor Cyan
+    
+    # Get all markdown files
+    $allFiles = @()
+    $folders = @($Config.folders.inbox, $Config.folders.raw, $Config.folders.working, $Config.folders.wiki, $Config.folders.archive)
+    
+    foreach ($folder in $folders) {
+        $folderPath = "$vaultRoot/$folder"
+        if (Test-Path $folderPath) {
+            $allFiles += Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse
         }
     }
-    return $false
+    
+    # Create lookup table of all files
+    $fileMap = @{}
+    foreach ($file in $allFiles) {
+        $relativePath = $file.FullName.Replace($vaultRoot + "\", "").Replace("\", "/")
+        $fileName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+        $fileMap[$fileName] = $relativePath
+        $fileMap[$relativePath] = $relativePath
+    }
+    
+    # Check links in each file
+    foreach ($file in $allFiles) {
+        try {
+            $content = Get-Content $file.FullName -Raw
+            
+            # Find markdown links [text](path) and wiki links [[path]]
+            $links = @()
+            $links += [regex]::Matches($content, '\[([^\]]+)\]\(([^)]+)\)') | ForEach-Object { $_.Groups[2].Value }
+            $links += [regex]::Matches($content, '\[\[([^\]]+)\]\]') | ForEach-Object { $_.Groups[1].Value }
+            
+            foreach ($link in $links) {
+                # Skip external links
+                if ($link -match '^https?://') { continue }
+                
+                # Clean up link path
+                $cleanLink = $link -replace '#.*$', '' # Remove anchors
+                $cleanLink = $cleanLink.Trim()
+                
+                # Check if target exists
+                $targetExists = $false
+                
+                # Try direct path match
+                if ($fileMap.ContainsKey($cleanLink)) {
+                    $targetExists = $true
+                }
+                # Try filename match
+                elseif ($fileMap.ContainsKey([System.IO.Path]::GetFileNameWithoutExtension($cleanLink))) {
+                    $targetExists = $true
+                }
+                # Try with .md extension
+                elseif ($fileMap.ContainsKey($cleanLink + ".md")) {
+                    $targetExists = $true
+                }
+                
+                if (!$targetExists) {
+                    $findings += [PSCustomObject]@{
+                        Type = "Broken Links"
+                        Severity = "Medium"
+                        File = $file.FullName.Replace($PWD.Path + "\", "")
+                        Issue = "Broken link: $link"
+                        Suggestion = "Update link path or create missing file"
+                    }
+                }
+            }
+        }
+        catch {
+            Write-Log "Error checking links in $($file.FullName): $($_.Exception.Message)" "WARN"
+        }
+    }
+    
+    return $findings
 }
 
-function Test-IsScaffoldFile {
-    param([System.IO.FileInfo]$File)
-    if ($File.Name -in @("README.md", "index.md")) { return $true }
-    if ($File.FullName -like "*\knowledge\schemas\*") { return $true }
-    return $false
+function Test-StaleContent {
+    param([hashtable]$Config)
+    
+    $findings = @()
+    $vaultRoot = $Config.system.vault_root
+    $staleThresholdMonths = 6
+    
+    Write-Host "📅 Checking for stale content..." -ForegroundColor Cyan
+    
+    $folders = @($Config.folders.working, $Config.folders.wiki)
+    
+    foreach ($folder in $folders) {
+        $folderPath = "$vaultRoot/$folder"
+        if (!(Test-Path $folderPath)) { continue }
+        
+        $files = Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse
+        
+        foreach ($file in $files) {
+            try {
+                $content = Get-Content $file.FullName -Raw
+                $frontmatter = @{}
+                
+                # Parse frontmatter with error handling
+                if ($content -match '(?s)^---\s*\n(.*?)\n---') {
+                    try {
+                        $yamlContent = $matches[1]
+                        $yamlContent -split "`n" | ForEach-Object {
+                            if ($_ -match '^(\w+):\s*(.*)$') {
+                                $frontmatter[$matches[1]] = $matches[2].Trim('"')
+                            }
+                        }
+                    }
+                    catch {
+                        Write-Log "Error parsing frontmatter in $($file.FullName): $($_.Exception.Message)" "WARN"
+                        continue
+                    }
+                }
+                
+                # Check last_updated or last_verified dates
+                $lastUpdated = $null
+                if ($frontmatter.ContainsKey("last_updated")) {
+                    try { $lastUpdated = [DateTime]::Parse($frontmatter.last_updated) } catch { }
+                }
+                if (!$lastUpdated -and $frontmatter.ContainsKey("last_verified")) {
+                    try { $lastUpdated = [DateTime]::Parse($frontmatter.last_verified) } catch { }
+                }
+                if (!$lastUpdated) {
+                    $lastUpdated = $file.LastWriteTime
+                }
+                
+                $monthsOld = ((Get-Date) - $lastUpdated).Days / 30
+                
+                if ($monthsOld -gt $staleThresholdMonths) {
+                    $severity = if ($monthsOld -gt 12) { "High" } elseif ($monthsOld -gt 9) { "Medium" } else { "Low" }
+                    
+                    $findings += [PSCustomObject]@{
+                        Type = "Stale Content"
+                        Severity = $severity
+                        File = $file.FullName.Replace($PWD.Path + "\", "")
+                        Issue = "Content is $([Math]::Round($monthsOld, 1)) months old"
+                        Suggestion = "Review and update content or mark as archived"
+                    }
+                }
+                
+                # Check review_trigger dates
+                if ($frontmatter.ContainsKey("review_trigger")) {
+                    try {
+                        $reviewDate = [DateTime]::Parse($frontmatter.review_trigger)
+                        if ($reviewDate -lt (Get-Date)) {
+                            $daysOverdue = ((Get-Date) - $reviewDate).Days
+                            
+                            $findings += [PSCustomObject]@{
+                                Type = "Stale Content"
+                                Severity = "Medium"
+                                File = $file.FullName.Replace($PWD.Path + "\", "")
+                                Issue = "Review overdue by $daysOverdue days"
+                                Suggestion = "Review content and update review_trigger date"
+                            }
+                        }
+                    }
+                    catch {
+                        # Invalid date format
+                    }
+                }
+            }
+            catch {
+                Write-Log "Error checking staleness of $($file.FullName): $($_.Exception.Message)" "WARN"
+            }
+        }
+    }
+    
+    return $findings
+}
+
+function Test-Duplicates {
+    param([hashtable]$Config)
+    
+    $findings = @()
+    $vaultRoot = $Config.system.vault_root
+    
+    Write-Host "🔄 Checking for duplicate content..." -ForegroundColor Cyan
+    
+    $allFiles = @()
+    $folders = @($Config.folders.inbox, $Config.folders.raw, $Config.folders.working, $Config.folders.wiki)
+    
+    foreach ($folder in $folders) {
+        $folderPath = "$vaultRoot/$folder"
+        if (Test-Path $folderPath) {
+            $allFiles += Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse
+        }
+    }
+    
+    # Group by title and check for duplicates
+    $titleGroups = $allFiles | Group-Object { 
+        try {
+            $content = Get-Content $_.FullName -Raw
+            if ($content -match '(?s)^---\s*\n(.*?)\n---') {
+                $yamlContent = $matches[1]
+                if ($yamlContent -match 'title:\s*"?([^"]*)"?') {
+                    return $matches[1].Trim()
+                }
+            }
+            return [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+        }
+        catch {
+            return [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+        }
+    }
+    
+    foreach ($group in $titleGroups) {
+        if ($group.Count -gt 1) {
+            $files = $group.Group | ForEach-Object { $_.FullName.Replace($PWD.Path + "\", "") }
+            
+            $findings += [PSCustomObject]@{
+                Type = "Duplicates"
+                Severity = "Medium"
+                File = $files -join ", "
+                Issue = "Duplicate title: '$($group.Name)'"
+                Suggestion = "Review files and merge or rename duplicates"
+            }
+        }
+    }
+    
+    return $findings
+}
+
+function Test-Orphans {
+    param([hashtable]$Config)
+    
+    $findings = @()
+    $vaultRoot = $Config.system.vault_root
+    
+    Write-Host "🏝️ Checking for orphaned files..." -ForegroundColor Cyan
+    
+    # Get all files and their links
+    $allFiles = @()
+    $allLinks = @()
+    
+    $folders = @($Config.folders.working, $Config.folders.wiki)
+    
+    foreach ($folder in $folders) {
+        $folderPath = "$vaultRoot/$folder"
+        if (!(Test-Path $folderPath)) { continue }
+        
+        $files = Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse
+        $allFiles += $files
+        
+        foreach ($file in $files) {
+            try {
+                $content = Get-Content $file.FullName -Raw
+                
+                # Find all internal links
+                $links = @()
+                $links += [regex]::Matches($content, '\[([^\]]+)\]\(([^)]+)\)') | ForEach-Object { $_.Groups[2].Value }
+                $links += [regex]::Matches($content, '\[\[([^\]]+)\]\]') | ForEach-Object { $_.Groups[1].Value }
+                
+                foreach ($link in $links) {
+                    if ($link -notmatch '^https?://') {
+                        $allLinks += $link -replace '#.*$', '' # Remove anchors
+                    }
+                }
+            }
+            catch {
+                Write-Log "Error processing $($file.FullName): $($_.Exception.Message)" "WARN"
+            }
+        }
+    }
+    
+    # Find files with no incoming links
+    foreach ($file in $allFiles) {
+        $fileName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+        $relativePath = $file.FullName.Replace($vaultRoot + "\", "").Replace("\", "/")
+        
+        $hasIncomingLinks = $false
+        foreach ($link in $allLinks) {
+            if ($link -eq $fileName -or $link -eq $relativePath -or $link -eq ($relativePath -replace '\.md$', '')) {
+                $hasIncomingLinks = $true
+                break
+            }
+        }
+        
+        if (!$hasIncomingLinks) {
+            $findings += [PSCustomObject]@{
+                Type = "Orphans"
+                Severity = "Low"
+                File = $file.FullName.Replace($PWD.Path + "\", "")
+                Issue = "No incoming links found"
+                Suggestion = "Add links from other content or consider archiving"
+            }
+        }
+    }
+    
+    return $findings
+}
+
+function Show-HealthReport {
+    param([array]$Findings)
+    
+    if ($Findings.Count -eq 0) {
+        Write-Host "✅ No health issues found! Knowledge base is healthy." -ForegroundColor Green
+        return
+    }
+    
+    # Group findings by type
+    $groupedFindings = $Findings | Group-Object Type
+    
+    Write-Host "`n🏥 Health Check Report" -ForegroundColor Cyan
+    Write-Host ("=" * 80) -ForegroundColor Gray
+    Write-Host "Total Issues Found: $($Findings.Count)" -ForegroundColor Yellow
+    
+    # Summary by severity
+    $severityCounts = $Findings | Group-Object Severity
+    foreach ($severity in $severityCounts) {
+        $color = switch ($severity.Name) {
+            "High" { "Red" }
+            "Medium" { "Yellow" }
+            "Low" { "Gray" }
+        }
+        Write-Host "$($severity.Name): $($severity.Count)" -ForegroundColor $color
+    }
+    
+    Write-Host ""
+    
+    # Detailed findings by type
+    foreach ($group in $groupedFindings) {
+        Write-Host "📋 $($group.Name) ($($group.Count) issues)" -ForegroundColor Cyan
+        Write-Host ("-" * 40) -ForegroundColor Gray
+        
+        foreach ($finding in $group.Group | Sort-Object Severity, File) {
+            $severityColor = switch ($finding.Severity) {
+                "High" { "Red" }
+                "Medium" { "Yellow" }
+                "Low" { "Gray" }
+            }
+            
+            Write-Host "[$($finding.Severity)]" -NoNewline -ForegroundColor $severityColor
+            Write-Host " $($finding.File)" -ForegroundColor White
+            Write-Host "  Issue: $($finding.Issue)" -ForegroundColor Gray
+            Write-Host "  Fix: $($finding.Suggestion)" -ForegroundColor DarkGray
+            Write-Host ""
+        }
+    }
+    
+    Write-Host ("=" * 80) -ForegroundColor Gray
+    Write-Host "💡 Use -Fix flag to automatically repair some issues" -ForegroundColor Yellow
 }
 
 try {
-    New-Item -ItemType Directory -Path $ReviewsDir -Force | Out-Null
-    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
-
-    $findings = [System.Collections.Generic.List[object]]::new()
-    $files = @(Get-MarkdownFiles)
-    $requiredWorking = "status", "confidence", "last_updated", "review_trigger", "source_list"
-    $requiredWiki = "status", "owner", "confidence", "last_updated", "last_verified", "review_trigger", "source_list"
-
-    if ($Type -in @("all", "metadata", "sources", "stale")) {
-        foreach ($file in $files) {
-            if (Test-IsScaffoldFile $file) { continue }
-            $frontmatter = Get-Frontmatter $file.FullName
-            $relative = Resolve-Path -Relative $file.FullName
-            $required = @()
-            if ($file.FullName -like "*\knowledge\working\*") { $required = $requiredWorking }
-            if ($file.FullName -like "*\knowledge\wiki\*") { $required = $requiredWiki }
-
-            if ($required.Count -gt 0 -and $frontmatter.Count -eq 0) {
-                Add-Finding $findings "Missing Metadata" $relative "high" "required frontmatter absent" "Add YAML frontmatter using the matching template."
-                continue
-            }
-
-            foreach ($field in $required) {
-                if (-not $frontmatter.ContainsKey($field) -or [string]::IsNullOrWhiteSpace([string]$frontmatter[$field])) {
-                    Add-Finding $findings "Missing Metadata" $relative "high" "missing required field: $field" "Add '$field' to YAML frontmatter."
-                }
-            }
-
-            if ($Type -in @("all", "sources") -and $file.FullName -like "*\knowledge\wiki\*") {
-                $content = Get-Content -Raw -Path $file.FullName
-                $hasSources = ($frontmatter.ContainsKey("source_list") -and $frontmatter["source_list"] -notin @("", "[]")) -or $content -match '(?m)^## Sources'
-                if (-not $hasSources) {
-                    Add-Finding $findings "Unsupported Claims" $relative "medium" "wiki page lacks source_list or Sources section" "Add source_list frontmatter and concrete source links."
-                }
-            }
-
-            if ($Type -in @("all", "stale") -and $frontmatter.ContainsKey("review_trigger") -and $frontmatter["review_trigger"]) {
-                [DateTime]$reviewDate = [DateTime]::MinValue
-                if ([DateTime]::TryParse($frontmatter["review_trigger"], [ref]$reviewDate) -and $reviewDate -lt $Now.Date) {
-                    Add-Finding $findings "Stale Review Dates" $relative "medium" "review_trigger is overdue" "Review the note and update review_trigger."
-                }
-            }
-        }
+    # Load configuration
+    $config = Get-Config
+    
+    # Validate directory structure
+    if (!(Test-DirectoryStructure $config)) {
+        Write-Log "Directory structure validation failed. Run setup-system.ps1 first." "ERROR"
+        exit 2
     }
-
-    if ($Type -in @("all", "links")) {
-        foreach ($file in $files) {
-            if (Test-IsScaffoldFile $file) { continue }
-            $content = Get-Content -Raw -Path $file.FullName
-            $matches = [regex]::Matches($content, '\[\[([^\]]+)\]\]')
-            foreach ($match in $matches) {
-                $target = $match.Groups[1].Value
-                if (-not (Resolve-WikiLink $target $files)) {
-                    Add-Finding $findings "Broken Links" (Resolve-Path -Relative $file.FullName) "high" "missing wiki link target: $target" "Create the target note or replace the link with a valid path."
-                }
-            }
+    
+    Write-Host "🏥 Running PinkyAndTheBrain Health Check..." -ForegroundColor Cyan
+    Write-Host "Check Type: $Type" -ForegroundColor Gray
+    Write-Host ""
+    
+    $allFindings = @()
+    
+    # Run selected health checks
+    switch ($Type) {
+        "all" {
+            $allFindings += Test-Metadata $config
+            $allFindings += Test-Links $config
+            $allFindings += Test-StaleContent $config
+            $allFindings += Test-Duplicates $config
+            $allFindings += Test-Orphans $config
         }
+        "metadata" { $allFindings += Test-Metadata $config }
+        "links" { $allFindings += Test-Links $config }
+        "stale" { $allFindings += Test-StaleContent $config }
+        "duplicates" { $allFindings += Test-Duplicates $config }
+        "orphans" { $allFindings += Test-Orphans $config }
     }
-
-    if ($Type -in @("all", "orphans")) {
-        $linkTargets = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-        foreach ($file in $files) {
-            if (Test-IsScaffoldFile $file) { continue }
-            $content = Get-Content -Raw -Path $file.FullName
-            [regex]::Matches($content, '\[\[([^\]]+)\]\]') | ForEach-Object {
-                $target = ($_.Groups[1].Value -split '\|')[0] -split '#'
-                if ($target[0]) { $linkTargets.Add($target[0].Trim()) | Out-Null }
-            }
-        }
-        foreach ($file in $files) {
-            if ((Test-IsScaffoldFile $file) -or -not $file.FullName.Contains("\knowledge\wiki\")) { continue }
-            if (-not $linkTargets.Contains($file.BaseName)) {
-                Add-Finding $findings "Orphaned Pages" (Resolve-Path -Relative $file.FullName) "low" "no incoming wiki links found" "Link this note from an index or related page, or archive it if unused."
-            }
-        }
-    }
-
-    $order = "Missing Metadata", "Broken Links", "Stale Review Dates", "Duplicate Titles", "Unsupported Claims", "Orphaned Pages"
-    $lines = @("# PinkyAndTheBrain Health Report", "", "Generated: $(Get-Date -Format o)", "", "Scope: $Type", "Include archive: $IncludeArchive", "")
-
-    if ($findings.Count -eq 0) {
-        $lines += "No findings."
+    
+    # Show report
+    Show-HealthReport $allFindings
+    
+    # Log health check
+    Write-Log "Health check completed: $Type - $($allFindings.Count) issues found" "INFO"
+    
+    if ($allFindings.Count -gt 0) {
+        exit 1  # Issues found
     }
     else {
-        $lines += "Found $($findings.Count) findings."
-        foreach ($group in $order) {
-            $items = @($findings | Where-Object { $_.finding_type -eq $group })
-            if ($items.Count -eq 0) { continue }
-            $lines += ""
-            $lines += "## $group"
-            foreach ($item in $items) {
-                $lines += "- [$($item.severity)] $($item.file_path) - $($item.rule_triggered). Repair: $($item.suggested_repair_action)"
-            }
-        }
+        exit 0  # All healthy
     }
-
-    $lines | ForEach-Object { Write-Host $_ }
-
-    if ($WriteReport) {
-        $reportPath = Join-Path $ReviewsDir "health-report-$(Get-Date -Format yyyy-MM-dd-HHmmss).md"
-        Set-Content -Path $reportPath -Value ($lines -join [Environment]::NewLine) -Encoding UTF8
-        Write-Host ""
-        Write-Host "Report written: $reportPath" -ForegroundColor Green
-    }
-
-    Add-Content -Path (Join-Path $LogDir "health-check.log") -Value "[$(Get-Date -Format o)] type=$Type findings=$($findings.Count)"
-    if ($findings.Count -gt 0) { exit 2 }
-    exit 0
 }
 catch {
-    Write-Error "Health check failed: $($_.Exception.Message)"
-    exit 1
+    Write-Log "Health check failed: $($_.Exception.Message)" "ERROR"
+    Write-Host "❌ Health check failed: $($_.Exception.Message)" -ForegroundColor Red
+    exit 2
 }
