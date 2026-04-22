@@ -54,9 +54,11 @@ sections:
     working_pattern:
       type: string
       required: true
+      must_contain: "{title}"
     wiki_pattern:
       type: string
       required: true
+      must_contain: "{title}"
 
   review_cadence:
     inbox_days:

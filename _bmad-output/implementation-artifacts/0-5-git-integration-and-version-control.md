@@ -2,7 +2,7 @@
 
 **Story ID:** 0.5  
 **Epic:** 0 - System Foundation  
-**Status:** ready-for-dev  
+**Status:** done
 **Created:** 2026-04-16  
 
 ## User Story
@@ -138,11 +138,82 @@ logs/
 - Configuration changes
 - System maintenance operations
 
+## Tasks/Subtasks
+
+- [x] Task 1: Git repository initialized with proper `.gitignore`
+  - [x] `.gitignore` updated to exclude `backup-*/`, `test-inbox-temp/`, logs, backups, quarantine, temp files
+  - [x] Existing git repo confirmed initialized in project root
+
+- [x] Task 2: Shared git utility library created
+  - [x] `scripts/lib/git-operations.ps1` with `Test-GitAvailable`, `Test-GitRepository`, `Invoke-GitCommit`, `Get-GitLog`, `Get-GitUncommitted`, `Get-GitFileHistory`, `Invoke-GitInit`
+  - [x] Graceful degradation when git not available
+
+- [x] Task 3: Git summary script implemented
+  - [x] `scripts/git-summary.ps1` — shows recent commits grouped by operation type
+  - [x] `-File` flag for per-file history
+  - [x] `-Uncommitted` flag to show staged/unstaged changes
+  - [x] Error messaging when git unavailable or repo not found
+
+- [x] Task 4: Rollback script implemented
+  - [x] `scripts/rollback.ps1` — time-based (`-Hours`) and file-based (`-File`) rollback
+  - [x] `-List` flag to preview changes without reverting
+  - [x] `-WhatIf` flag for dry-run
+  - [x] Rollback operation committed with descriptive message
+
+- [x] Task 5: Git hooks integration script created
+  - [x] `scripts/git-hooks.ps1` — callable by other scripts post-operation
+
+- [x] Task 6: Integration hooks added to existing scripts
+  - [x] `scripts/capture.ps1` — auto-commits captured files with "Knowledge capture: [path] from [type]"
+  - [x] `scripts/triage.ps1` — auto-commits after disposition with "Knowledge triage: [action] [count] item(s)"
+  - [x] `scripts/setup-system.ps1` — calls `Invoke-GitInit` + `Invoke-GitCommit` with "Initial PinkyAndTheBrain setup"
+
+- [x] Task 7: Tests written and passing
+  - [x] `tests/git-operations.Tests.ps1` — 11 tests covering all public functions, graceful degradation
+  - [x] Full test suite run: no regressions (pre-existing 11 failures confirmed unchanged)
+
+### Review Findings
+
+- [x] [Review][Patch] Rollback restores files from `HEAD`, so committed mistakes are not reverted [scripts/rollback.ps1:116]
+- [x] [Review][Patch] Auto-commit paths can stage and commit unrelated repository changes when no file list is supplied [scripts/lib/git-operations.ps1:55]
+- [x] [Review][Patch] Required configuration and maintenance commit triggers are not integrated [scripts/git-hooks.ps1:41]
+
 ## Definition of Done
-- [ ] Git repository initialized with proper `.gitignore`
-- [ ] All knowledge operations automatically committed
-- [ ] Git summary and rollback scripts implemented
-- [ ] Integration hooks added to all existing scripts
-- [ ] Error handling for Git failures
-- [ ] Recovery operations tested and documented
-- [ ] Commit message patterns consistent and descriptive
+- [x] Git repository initialized with proper `.gitignore`
+- [x] All knowledge operations automatically committed
+- [x] Git summary and rollback scripts implemented
+- [x] Integration hooks added to all existing scripts
+- [x] Error handling for Git failures
+- [x] Recovery operations tested and documented
+- [x] Commit message patterns consistent and descriptive
+
+## File List
+
+- `.gitignore` — added `backup-*/` and `test-inbox-temp/` exclusions
+- `scripts/lib/git-operations.ps1` — new: shared git utilities with graceful degradation
+- `scripts/git-summary.ps1` — new: repository activity summary grouped by operation type
+- `scripts/rollback.ps1` — new: time-based and file-based rollback with commit
+- `scripts/git-hooks.ps1` — new: auto-commit integration helper for other scripts
+- `scripts/capture.ps1` — added git-operations import and post-write commit
+- `scripts/triage.ps1` — added git-operations import and post-disposition commit
+- `scripts/setup-system.ps1` — added git init + initial commit after folder setup
+- `tests/git-operations.Tests.ps1` — new: 11 Pester tests for git-operations.ps1
+
+## Dev Agent Record
+
+### Implementation Plan
+Implemented git integration as a layered approach:
+1. Core utilities in `scripts/lib/git-operations.ps1` with graceful degradation if git unavailable
+2. User-facing scripts (`git-summary.ps1`, `rollback.ps1`) for AC-required operations
+3. Lightweight `git-hooks.ps1` for external callers
+4. Non-invasive integration in `capture.ps1`, `triage.ps1`, `setup-system.ps1` — git calls wrapped in `Get-Command` guard so scripts never break if git-operations.ps1 isn't loaded
+
+### Completion Notes
+- All 7 tasks and Definition of Done items satisfied
+- 11 new tests passing; 0 regressions introduced (pre-existing 11 failures confirmed pre-dating this story)
+- Git gracefully degrades: all operations log WARN and continue if git unavailable
+- `$args` PowerShell reserved variable conflict fixed in `Get-GitLog` (renamed to `$gitArgs`)
+
+## Change Log
+
+- 2026-04-22: Story implemented — git utilities library, git-summary.ps1, rollback.ps1, git-hooks.ps1 created; capture.ps1, triage.ps1, setup-system.ps1 updated with auto-commit integration; .gitignore updated; tests added

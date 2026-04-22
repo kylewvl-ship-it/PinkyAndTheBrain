@@ -110,6 +110,22 @@ Describe "Read-YamlConfig - YAML parsing" {
         Set-Content $file "system:`n   vault_root: ./bad"
         { Read-YamlConfig -Path $file } | Should Throw "line 2"
     }
+
+    It "strips UTF-8 BOM from first line" {
+        $file = Join-Path $script:TempDir "bom.yaml"
+        $bom = [byte[]](0xEF, 0xBB, 0xBF)
+        $body = [System.Text.Encoding]::UTF8.GetBytes("project: BomTest")
+        [System.IO.File]::WriteAllBytes($file, $bom + $body)
+        $result = Read-YamlConfig -Path $file
+        $result.project | Should Be "BomTest"
+    }
+
+    It "skips YAML list items and continues parsing" {
+        $file = Join-Path $script:TempDir "list.yaml"
+        Set-Content $file "project: Test`n- item one`n- item two"
+        $result = Read-YamlConfig -Path $file
+        $result.project | Should Be "Test"
+    }
 }
 
 Describe "Get-DefaultConfig - default values" {
@@ -167,6 +183,14 @@ Describe "Merge-Config - merging logic" {
         $merged = Merge-Config -Defaults $defaults -Overrides $overrides
         $merged.b | Should Be 2
     }
+
+    It "keeps hashtable default when override provides a scalar" {
+        $defaults = @{ section = @{ key = "value" } }
+        $overrides = @{ section = "scalar" }
+        $merged = Merge-Config -Defaults $defaults -Overrides $overrides
+        ($merged.section -is [hashtable]) | Should Be $true
+        $merged.section.key | Should Be "value"
+    }
 }
 
 Describe "Load-Config - config loading" {
@@ -194,6 +218,18 @@ Describe "Load-Config - config loading" {
         }
         finally {
             [Environment]::SetEnvironmentVariable("PINKY_VAULT_ROOT", $oldValue)
+        }
+    }
+
+    It "applies boolean env var override with non-standard true value" {
+        $old = [Environment]::GetEnvironmentVariable("PINKY_SEARCH_INCLUDE_ARCHIVED")
+        try {
+            [Environment]::SetEnvironmentVariable("PINKY_SEARCH_INCLUDE_ARCHIVED", "yes")
+            $config = Load-Config -ConfigPath (Join-Path $script:Root "config/pinky-config.yaml")
+            $config.search.include_archived | Should Be $true
+        }
+        finally {
+            [Environment]::SetEnvironmentVariable("PINKY_SEARCH_INCLUDE_ARCHIVED", $old)
         }
     }
 
@@ -232,6 +268,30 @@ Describe "Test-ConfigValues - value validation" {
         $config.file_naming.conversation_pattern = "YYYY-MM-DD-{title}"
         $errors = Test-ConfigValues -Config $config
         $match = @($errors | Where-Object { $_ -like "*conversation_pattern*" })
+        ($match.Count -gt 0) | Should Be $true
+    }
+
+    It "reports error when working_pattern is missing {title}" {
+        $config = Get-DefaultConfig
+        $config.file_naming.working_pattern = "no-placeholder"
+        $errors = Test-ConfigValues -Config $config
+        $match = @($errors | Where-Object { $_ -like "*working_pattern*" })
+        ($match.Count -gt 0) | Should Be $true
+    }
+
+    It "reports error when wiki_pattern is missing {title}" {
+        $config = Get-DefaultConfig
+        $config.file_naming.wiki_pattern = "no-placeholder"
+        $errors = Test-ConfigValues -Config $config
+        $match = @($errors | Where-Object { $_ -like "*wiki_pattern*" })
+        ($match.Count -gt 0) | Should Be $true
+    }
+
+    It "reports error when required string is empty" {
+        $config = Get-DefaultConfig
+        $config.system.vault_root = ""
+        $errors = Test-ConfigValues -Config $config
+        $match = @($errors | Where-Object { $_ -like "*vault_root*" })
         ($match.Count -gt 0) | Should Be $true
     }
 }

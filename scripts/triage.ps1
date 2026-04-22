@@ -17,6 +17,10 @@ if (!(Test-Path "$PSScriptRoot/lib/common.ps1")) {
 }
 . "$PSScriptRoot/lib/common.ps1"
 
+if (Test-Path "$PSScriptRoot/lib/git-operations.ps1") {
+    . "$PSScriptRoot/lib/git-operations.ps1"
+}
+
 if ($Help) {
     Show-Usage "triage.ps1" "Interactive triage of inbox items" @(
         ".\scripts\triage.ps1"
@@ -188,6 +192,7 @@ function Process-Disposition {
     
     $selectedItems = $Items | Where-Object { $_.Index -in $SelectedIndices }
     $vaultRoot = $Config.system.vault_root
+    $changedFiles = @()
     
     Write-Host "`nProcessing $($selectedItems.Count) items with disposition: $Disposition" -ForegroundColor Cyan
     
@@ -202,6 +207,7 @@ function Process-Disposition {
                 }
                 else {
                     Remove-Item $sourcePath -Force
+                    $changedFiles += $sourcePath
                     Write-Log "Deleted item: $($item.FileName)" "INFO" "logs/triage-actions.log"
                     Write-Host "🗑️  Deleted: $($item.FileName)" -ForegroundColor Red
                 }
@@ -225,6 +231,8 @@ function Process-Disposition {
                     
                     Set-Content -Path $targetPath -Value $updatedContent -Encoding UTF8
                     Remove-Item $sourcePath -Force
+                    $changedFiles += $sourcePath
+                    $changedFiles += $targetPath
                     
                     Write-Log "Archived item: $($item.FileName)" "INFO" "logs/triage-actions.log"
                     Write-Host "📦 Archived: $($item.FileName)" -ForegroundColor Yellow
@@ -243,6 +251,8 @@ function Process-Disposition {
                     
                     Set-Content -Path $targetPath -Value $updatedContent -Encoding UTF8
                     Remove-Item $sourcePath -Force
+                    $changedFiles += $sourcePath
+                    $changedFiles += $targetPath
                     
                     Write-Log "Moved to raw: $($item.FileName)" "INFO" "logs/triage-actions.log"
                     Write-Host "📄 Moved to raw: $($item.FileName)" -ForegroundColor Blue
@@ -261,6 +271,8 @@ function Process-Disposition {
                     
                     Set-Content -Path $targetPath -Value $updatedContent -Encoding UTF8
                     Remove-Item $sourcePath -Force
+                    $changedFiles += $sourcePath
+                    $changedFiles += $targetPath
                     
                     Write-Log "Moved to working: $($item.FileName)" "INFO" "logs/triage-actions.log"
                     Write-Host "📝 Moved to working: $($item.FileName)" -ForegroundColor Green
@@ -277,6 +289,7 @@ function Process-Disposition {
                     $updatedContent = $content -replace 'disposition:\s*.*', 'disposition: "wiki-candidate"'
                     
                     Set-Content -Path $sourcePath -Value $updatedContent -Encoding UTF8
+                    $changedFiles += $sourcePath
                     
                     Write-Log "Marked as wiki candidate: $($item.FileName)" "INFO" "logs/triage-actions.log"
                     Write-Host "⭐ Marked as wiki candidate: $($item.FileName)" -ForegroundColor Magenta
@@ -284,6 +297,8 @@ function Process-Disposition {
             }
         }
     }
+
+    return $changedFiles
 }
 
 try {
@@ -323,11 +338,20 @@ try {
                     continue
                 }
                 
-                Process-Disposition -Items $items -SelectedIndices $selection.Items -Disposition $selection.Disposition -Config $config -WhatIf:$WhatIf
-                
+                $changedPaths = Process-Disposition -Items $items -SelectedIndices $selection.Items -Disposition $selection.Disposition -Config $config -WhatIf:$WhatIf
+
                 if (!$WhatIf) {
+                    if (Get-Command 'Invoke-GitCommit' -ErrorAction SilentlyContinue) {
+                        $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+                        $changedFiles = @($changedPaths | ForEach-Object { $_.Replace($repoRoot, '').TrimStart('/\').Replace('\', '/') } | Where-Object { $_ })
+                        $count = $selection.Items.Count
+                        $dispMap = @{ D = "deleted"; A = "archived"; R = "moved to raw"; W = "moved to working"; C = "marked wiki-candidate" }
+                        $dispDesc = if ($dispMap.ContainsKey($selection.Disposition)) { $dispMap[$selection.Disposition] } else { $selection.Disposition }
+                        Invoke-GitCommit -Files $changedFiles -Message "Knowledge triage: $dispDesc $count item(s) from inbox" -RepoPath $repoRoot | Out-Null
+                    }
+
                     # Refresh items list
-                    $items = Get-InboxItems -InboxPath $inboxPath -FilterSourceType $SourceType -FilterOlderThan $OlderThan
+                    $items = Get-InboxItems -InboxPath $inboxPath -FilterSourceType $SourceType -FilterProject $Project -FilterOlderThan $OlderThan
                     
                     if ($items.Count -eq 0) {
                         Write-Host "`n✅ All items processed! Inbox is now empty." -ForegroundColor Green

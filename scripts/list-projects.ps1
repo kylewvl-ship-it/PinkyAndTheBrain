@@ -47,21 +47,27 @@ foreach ($folder in $searchFolders) {
     $mdFiles = Get-ChildItem $folderPath -Filter "*.md" -Recurse -ErrorAction SilentlyContinue
     foreach ($file in $mdFiles) {
         $totalFiles++
-        $proj = $config.projects.default_project
+        $proj = $null
 
         # Extract project from front-matter
         $lines = Get-Content $file.FullName -TotalCount 20 -ErrorAction SilentlyContinue
         $inFrontMatter = $false
+        $lineIndex = 0
         foreach ($line in $lines) {
-            if ($line -eq '---') { $inFrontMatter = !$inFrontMatter; continue }
+            if ($line -eq '---') {
+                if (!$inFrontMatter) { $inFrontMatter = $true } else { break }
+                $lineIndex++; continue
+            }
             if ($inFrontMatter -and $line -match '^project:\s*(.+)$') {
                 $proj = $Matches[1].Trim().Trim('"').Trim("'")
-                if ([string]::IsNullOrWhiteSpace($proj)) { $proj = $config.projects.default_project }
+                if ([string]::IsNullOrWhiteSpace($proj)) { $proj = $null }
                 break
             }
-            if (!$inFrontMatter -and $lines.IndexOf($line) -gt 0) { break }
+            if (!$inFrontMatter -and $lineIndex -gt 0) { break }
+            $lineIndex++
         }
 
+        if ($null -eq $proj) { continue }
         if (!$projectCounts.ContainsKey($proj)) { $projectCounts[$proj] = 0 }
         $projectCounts[$proj]++
     }

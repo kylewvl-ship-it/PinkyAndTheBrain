@@ -20,6 +20,10 @@ if (!(Test-Path "$PSScriptRoot/lib/config-loader.ps1")) {
 }
 . "$PSScriptRoot/lib/config-loader.ps1"
 
+if (Test-Path "$PSScriptRoot/lib/git-operations.ps1") {
+    . "$PSScriptRoot/lib/git-operations.ps1"
+}
+
 if ($Help) {
     Show-Usage "validate-config.ps1" "Validate PinkyAndTheBrain configuration file" @(
         ".\scripts\validate-config.ps1"
@@ -40,6 +44,11 @@ if (!(Test-Path $ConfigPath)) {
     Write-Host "✗ Config file not found: $ConfigPath" -ForegroundColor Red
     if ($Fix) {
         Initialize-Config -ConfigPath $ConfigPath
+        if (Get-Command 'Invoke-GitCommit' -ErrorAction SilentlyContinue) {
+            $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+            $relPath = (Resolve-Path $ConfigPath).Path.Replace($repoRoot, '').TrimStart('/\').Replace('\', '/')
+            Invoke-GitCommit -Files @($relPath) -Message "Configuration update: initialized $relPath" -RepoPath $repoRoot | Out-Null
+        }
         Write-Host "✓ Created default config at: $ConfigPath" -ForegroundColor Green
         exit 0
     }

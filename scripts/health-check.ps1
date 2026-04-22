@@ -18,6 +18,10 @@ if (!(Test-Path "$PSScriptRoot/lib/common.ps1")) {
 }
 . "$PSScriptRoot/lib/common.ps1"
 
+if (Test-Path "$PSScriptRoot/lib/git-operations.ps1") {
+    . "$PSScriptRoot/lib/git-operations.ps1"
+}
+
 if ($Help) {
     Show-Usage "health-check.ps1" "Validate knowledge base health and integrity" @(
         ".\scripts\health-check.ps1"
@@ -204,6 +208,7 @@ function Test-StaleContent {
     $findings = @()
     $vaultRoot = $Config.system.vault_root
     $staleThresholdMonths = $Config.health_checks.stale_threshold_months
+    if (-not $staleThresholdMonths -or $staleThresholdMonths -le 0) { $staleThresholdMonths = 6 }
     
     Write-Host "📅 Checking for stale content..." -ForegroundColor Cyan
     
@@ -502,6 +507,16 @@ try {
     
     # Log health check
     Write-Log "Health check completed: $Type - $($allFindings.Count) issues found" "INFO"
+
+    if ($Fix -and -not $WhatIf -and (Get-Command 'Invoke-GitCommit' -ErrorAction SilentlyContinue)) {
+        $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+        $candidateChanges = @(Get-GitUncommitted -RepoPath $repoRoot | ForEach-Object {
+            if ($_ -match '^\s*\S+\s+(.+)$') { $matches[1].Trim('"') }
+        } | Where-Object { $_ -match '^(knowledge|config)/' })
+        if ($candidateChanges.Count -gt 0) {
+            Invoke-GitCommit -Files $candidateChanges -Message "System maintenance: health check $Type fixes" -RepoPath $repoRoot | Out-Null
+        }
+    }
     
     if ($allFindings.Count -gt 0) {
         exit 1  # Issues found

@@ -24,6 +24,10 @@ function Read-YamlConfig {
 
     foreach ($rawLine in (Get-Content $Path -Encoding UTF8)) {
         $lineNumber++
+        # Strip UTF-8 BOM if present on the first line
+        if ($lineNumber -eq 1 -and $rawLine.Length -gt 0 -and $rawLine[0] -eq [char]0xFEFF) {
+            $rawLine = $rawLine.Substring(1)
+        }
         if ($rawLine -match '^\s*$' -or $rawLine -match '^\s*#') { continue }
         if ($rawLine -match "`t") { throw "YAML parse error at line ${lineNumber}: tabs are not supported; use spaces" }
 
@@ -31,6 +35,12 @@ function Read-YamlConfig {
         if (($indent % 2) -ne 0) { throw "YAML parse error at line ${lineNumber}: indentation must use multiples of two spaces" }
 
         $content = $rawLine.Trim()
+
+        # Skip YAML list items — this parser supports maps only
+        if ($content -match '^\s*-\s') {
+            Write-Host "[WARN] YAML list at line ${lineNumber} is not supported and will be ignored." -ForegroundColor Yellow
+            continue
+        }
 
         while ($stack.Count -gt 0 -and $stack[$stack.Count - 1].Indent -ge $indent) {
             $stack.RemoveAt($stack.Count - 1)
@@ -133,7 +143,12 @@ function Merge-Config {
             $merged[$key] = Merge-Config -Defaults $Defaults[$key] -Overrides $Overrides[$key]
         }
         elseif ($Overrides.ContainsKey($key)) {
-            $merged[$key] = $Overrides[$key]
+            if ($Defaults[$key] -is [hashtable] -and $Overrides[$key] -isnot [hashtable]) {
+                Write-Host "[WARN] Config key '$key' expects a map but got a scalar override; keeping defaults for this section." -ForegroundColor Yellow
+                $merged[$key] = $Defaults[$key]
+            } else {
+                $merged[$key] = $Overrides[$key]
+            }
         }
         else {
             $merged[$key] = $Defaults[$key]
@@ -151,6 +166,12 @@ function Initialize-Config {
     $dir = Split-Path $ConfigPath -Parent
     if ($dir -and !(Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+
+    if (Test-Path $ConfigPath) {
+        $backup = "$ConfigPath.bak"
+        Copy-Item $ConfigPath $backup -Force
+        Write-Host "[INFO] Backed up existing config to: $backup" -ForegroundColor Gray
     }
 
     $defaultPath = Join-Path (Split-Path $ConfigPath -Parent) "default-config.yaml"
@@ -183,24 +204,56 @@ function Apply-EnvironmentOverrides {
     param([hashtable]$Config)
 
     $overrides = @(
-        @{ Env = 'PINKY_VAULT_ROOT'; Section = 'system'; Key = 'vault_root' }
-        @{ Env = 'PINKY_SCRIPT_ROOT'; Section = 'system'; Key = 'script_root' }
-        @{ Env = 'PINKY_TEMPLATE_ROOT'; Section = 'system'; Key = 'template_root' }
-        @{ Env = 'PINKY_SEARCH_MAX_RESULTS'; Section = 'search'; Key = 'max_results'; Type = 'integer' }
+        @{ Env = 'PINKY_VAULT_ROOT';            Section = 'system'; Key = 'vault_root';        Type = 'string' }
+        @{ Env = 'PINKY_SCRIPT_ROOT';           Section = 'system'; Key = 'script_root';       Type = 'string' }
+        @{ Env = 'PINKY_TEMPLATE_ROOT';         Section = 'system'; Key = 'template_root';     Type = 'string' }
+        @{ Env = 'PINKY_SEARCH_MAX_RESULTS';    Section = 'search'; Key = 'max_results';       Type = 'integer'; Min = 1; Max = 1000 }
         @{ Env = 'PINKY_SEARCH_INCLUDE_ARCHIVED'; Section = 'search'; Key = 'include_archived'; Type = 'boolean' }
-        @{ Env = 'PINKY_SEARCH_CASE_SENSITIVE'; Section = 'search'; Key = 'case_sensitive'; Type = 'boolean' }
+        @{ Env = 'PINKY_SEARCH_CASE_SENSITIVE'; Section = 'search'; Key = 'case_sensitive';    Type = 'boolean' }
     )
 
     foreach ($override in $overrides) {
         $raw = [Environment]::GetEnvironmentVariable($override.Env)
         if ([string]::IsNullOrEmpty($raw)) { continue }
 
-        $value = switch ($override.Type) {
-            'integer' { [int]$raw }
-            'boolean' { [System.Convert]::ToBoolean($raw) }
-            default { $raw }
+        $value = $null
+        $skip = $false
+
+        try {
+            switch ($override.Type) {
+                'integer' {
+                    $intVal = [int]$raw
+                    if ($override.ContainsKey('Min') -and $intVal -lt $override.Min) {
+                        Write-Host "[WARN] $($override.Env)=$raw is below minimum $($override.Min); env override ignored." -ForegroundColor Yellow
+                        $skip = $true; break
+                    }
+                    if ($override.ContainsKey('Max') -and $intVal -gt $override.Max) {
+                        Write-Host "[WARN] $($override.Env)=$raw is above maximum $($override.Max); env override ignored." -ForegroundColor Yellow
+                        $skip = $true; break
+                    }
+                    $value = $intVal
+                }
+                'boolean' {
+                    switch ($raw.Trim().ToLower()) {
+                        { $_ -in @('true','1','yes','on') }  { $value = $true }
+                        { $_ -in @('false','0','no','off') } { $value = $false }
+                        default {
+                            Write-Host "[WARN] $($override.Env)='$raw' is not a valid boolean (use true/false); env override ignored." -ForegroundColor Yellow
+                            $skip = $true
+                        }
+                    }
+                }
+                default { $value = $raw }
+            }
         }
-        Set-ConfigValue -Config $Config -Section $override.Section -Key $override.Key -Value $value
+        catch {
+            Write-Host "[WARN] $($override.Env)='$raw' could not be parsed and will be ignored: $($_.Exception.Message)" -ForegroundColor Yellow
+            $skip = $true
+        }
+
+        if (!$skip) {
+            Set-ConfigValue -Config $Config -Section $override.Section -Key $override.Key -Value $value
+        }
     }
 
     return $Config
@@ -230,6 +283,12 @@ function Load-Config {
     if (!(Test-Path $ConfigPath)) {
         Write-Host "[WARN] Config not found ($ConfigPath). Creating default and continuing." -ForegroundColor Yellow
         Initialize-Config -ConfigPath $ConfigPath
+        if (Test-Path $ConfigPath) {
+            $written = Read-YamlConfig -Path $ConfigPath
+            if ($written) {
+                $defaults = Merge-Config -Defaults $defaults -Overrides $written
+            }
+        }
         return Resolve-ProjectConfig -Config (Apply-EnvironmentOverrides -Config $defaults) -Project $Project
     }
 
@@ -293,9 +352,39 @@ function Test-ConfigValues {
         }
     }
 
+    $stringChecks = @(
+        @{ Section = 'system';   Key = 'vault_root' }
+        @{ Section = 'system';   Key = 'script_root' }
+        @{ Section = 'system';   Key = 'template_root' }
+        @{ Section = 'projects'; Key = 'default_project' }
+    )
+
+    foreach ($chk in $stringChecks) {
+        $val = $Config[$chk.Section][$chk.Key]
+        if ([string]::IsNullOrWhiteSpace($val)) {
+            $errors += "$($chk.Section).$($chk.Key) must not be empty"
+        }
+    }
+
+    $boolChecks = @(
+        @{ Section = 'ai_handoff'; Key = 'exclude_private' }
+        @{ Section = 'projects';   Key = 'create_subfolders' }
+        @{ Section = 'search';     Key = 'include_archived' }
+        @{ Section = 'search';     Key = 'case_sensitive' }
+    )
+
+    foreach ($chk in $boolChecks) {
+        $val = $Config[$chk.Section][$chk.Key]
+        if ($val -isnot [bool]) {
+            $errors += "$($chk.Section).$($chk.Key) must be a boolean (true/false) (got: $val)"
+        }
+    }
+
     $patternChecks = @(
         @{ Section = 'file_naming'; Key = 'inbox_pattern';        MustContain = '{title}' }
         @{ Section = 'file_naming'; Key = 'conversation_pattern'; MustContain = '{service}' }
+        @{ Section = 'file_naming'; Key = 'working_pattern';      MustContain = '{title}' }
+        @{ Section = 'file_naming'; Key = 'wiki_pattern';         MustContain = '{title}' }
     )
 
     foreach ($chk in $patternChecks) {

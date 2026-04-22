@@ -23,6 +23,10 @@ if (!(Test-Path "$PSScriptRoot/lib/common.ps1")) {
 }
 . "$PSScriptRoot/lib/common.ps1"
 
+if (Test-Path "$PSScriptRoot/lib/git-operations.ps1") {
+    . "$PSScriptRoot/lib/git-operations.ps1"
+}
+
 if ($Help) {
     Show-Usage "capture.ps1" "Capture knowledge items into the inbox or raw folders" @(
         ".\scripts\capture.ps1 -Type manual -Title 'My Note' -Content 'Note content'"
@@ -204,8 +208,8 @@ try {
     }
     
     # Check for content size limit (configurable, default 10MB)
-    $maxSizeRaw = if ($config.limits -and $config.limits.max_content_size) { $config.limits.max_content_size } else { $null }
-    $maxSize = if ($maxSizeRaw) { $maxSizeRaw } else { 10MB }
+    $maxSizeRaw = if ($config.limits -and $config.limits.ContainsKey('max_content_size')) { $config.limits.max_content_size } else { $null }
+    $maxSize = if ($null -ne $maxSizeRaw -and $maxSizeRaw -gt 0) { $maxSizeRaw } else { 10MB }
     if ($template.Length -gt $maxSize) {
         Write-Log "Content exceeds $($maxSize/1MB)MB limit. Consider splitting into multiple files." "WARN"
         if (![Environment]::UserInteractive) {
@@ -247,7 +251,14 @@ try {
             Write-Log "Successfully captured content to: $filePath" "INFO"
             Write-Host "✅ Content captured successfully!" -ForegroundColor Green
             Write-Host "📁 File: $filePath" -ForegroundColor Cyan
-            
+
+            if (Get-Command 'Invoke-GitCommit' -ErrorAction SilentlyContinue) {
+                $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+                $relPath = $filePath.Replace($repoRoot, '').TrimStart('/\').Replace('\', '/')
+                $commitMsg = "Knowledge capture: $relPath from $Type"
+                Invoke-GitCommit -Files @($relPath) -Message $commitMsg -RepoPath $repoRoot | Out-Null
+            }
+
             # Return the file path for scripting
             return $filePath
         }

@@ -211,6 +211,7 @@ function Resolve-ConfiguredPath {
     param([string]$RootPath, [string]$Path)
 
     if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    if ($Path -match '^\.\.[\\/]') { return [System.IO.Path]::GetFullPath((Join-Path $RootPath $Path)) }
     $relative = $Path.TrimStart('.', '/', '\')
     return Join-Path $RootPath $relative
 }
@@ -297,6 +298,25 @@ try {
         Ensure-File -Path $path -Content $indexFiles[$path]
     }
     Write-Log "Index files created"
+
+    # Git initialization and initial commit
+    Write-Host "Initializing version control..." -ForegroundColor Yellow
+    if (Test-Path "$PSScriptRoot/lib/git-operations.ps1") {
+        . "$PSScriptRoot/lib/git-operations.ps1"
+        if (Test-GitAvailable) {
+            if (-not (Test-GitRepository -Path $Root)) {
+                Invoke-GitInit -RepoPath $Root | Out-Null
+                Write-Log "Git repository initialized"
+            }
+            Invoke-GitCommit -Message "Initial PinkyAndTheBrain setup" -RepoPath $Root -IncludeAll | Out-Null
+            Write-Log "Initial commit created"
+            Write-Host "✅ Version control initialized." -ForegroundColor Green
+        }
+        else {
+            Write-Host "⚠️  Git not available - version control skipped. Install Git for full functionality." -ForegroundColor Yellow
+            Write-Log "Git not available during setup"
+        }
+    }
 
     Write-Host "PinkyAndTheBrain setup complete." -ForegroundColor Green
     Write-Log "Setup completed successfully"

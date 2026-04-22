@@ -1,6 +1,8 @@
 logs/
 backups/
+backup-*/
 quarantine/
+test-inbox-temp/
 *.tmp
 *.bak
 *.swp

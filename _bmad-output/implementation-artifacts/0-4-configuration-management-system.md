@@ -2,7 +2,7 @@
 
 **Story ID:** 0.4  
 **Epic:** 0 - System Foundation  
-**Status:** review  
+**Status:** done  
 **Created:** 2026-04-16  
 
 ## User Story
@@ -202,5 +202,62 @@ scripts/
 - `tests/config-loader.Tests.ps1`
 - `tests/setup-system.Tests.ps1`
 
+## Review Findings
+_Group A (config layer) — 2026-04-22_
+
+- [x] [Review][Dismiss] Removed behavior — `required_working_fields`, `retrieval.require_sources_for_wiki` confirmed never consumed by any script; removal is safe
+- [x] [Review][Dismiss] `similarity_threshold` — defined and validated but never consumed by any script; type/range moot until consuming code is added
+- [x] [Review][Patch] Boolean env override parsing broken — fixed: per-variable try/catch + explicit switch on true/false/yes/no/1/0 [scripts/lib/config-loader.ps1]
+- [x] [Review][Patch] `validate-config.ps1 -Fix` silently overwrites `pinky-config.yaml` — fixed: backup to `.bak` before overwrite [scripts/lib/config-loader.ps1]
+- [x] [Review][Patch] Env override bypasses range validation — fixed: Min/Max checked within `Apply-EnvironmentOverrides` [scripts/lib/config-loader.ps1]
+- [x] [Review][Patch] Non-numeric env var triggers outer catch discarding entire user config — fixed: per-variable catch skips only the bad variable [scripts/lib/config-loader.ps1]
+- [x] [Review][Patch] Empty string passes required-string validation — fixed: `IsNullOrWhiteSpace` checks added to `Test-ConfigValues` [scripts/lib/config-loader.ps1]
+- [x] [Review][Patch] `working_pattern` / `wiki_pattern` missing `must_contain` placeholder constraint — fixed: added to schema and validator [config/config-schema.yaml, scripts/lib/config-loader.ps1]
+- [x] [Review][Defer] Unknown keys in user config silently accepted by loader — pre-existing loader architecture [scripts/lib/config-loader.ps1] — deferred, pre-existing
+- [x] [Review][Defer] `projects.overrides` can recursively merge itself — no depth guard in Merge-Config — deferred, pre-existing
+- [x] [Review][Defer] Integer values >2,147,483,647 throw in `Convert-YamlValue` (32-bit `[int]` cast) — deferred, pre-existing
+- [x] [Review][Defer] YAML key regex rejects keys containing dots — breaks project names like `my.project` in `overrides` — deferred, pre-existing
+- [x] [Review][Defer] `privacy` and `limits` config sections not listed in spec's 8-section schema — sensible additions but undocumented spec delta — deferred, pre-existing
+- [x] [Review][Defer] `inbox_pattern` timestamp tokens (`YYYY-MM-DD-HHMMSS`) unvalidated — user can omit them causing non-unique filenames — deferred, pre-existing
+- [x] [Review][Defer] `max_content_size` has no upper bound in schema — very large values pass unchallenged — deferred, pre-existing
+
+_Group C (scripts) — 2026-04-22_
+
+- [x] [Review][Decision] `$frontmatter.project` missing key — resolved B: missing = exclude from filter; patched list-projects to skip untagged files rather than defaulting to default_project [scripts/list-projects.ps1]
+- [x] [Review][Patch] `stale_threshold_months` null coerces to 0 — fixed: null guard defaults to 6 [scripts/health-check.ps1]
+- [x] [Review][Patch] `$lines.IndexOf($line)` broken for single-line files (string vs array) and duplicate lines — fixed: replaced with explicit `$lineIndex` counter [scripts/list-projects.ps1]
+- [x] [Review][Patch] Front-matter `---` toggle triggered by horizontal rules in document body — fixed: toggle only opens on first `---`, breaks on second [scripts/list-projects.ps1]
+- [x] [Review][Patch] `max_content_size: 0` silently falls back to 10MB — fixed: `ContainsKey` + explicit null/positive check [scripts/capture.ps1]
+- [x] [Review][Patch] Triage refresh loop drops `$FilterProject` — fixed: added `-FilterProject $Project` to refresh call [scripts/triage.ps1]
+- [x] [Review][Patch] `Resolve-ConfiguredPath` strips `../` path prefix — fixed: `../`-prefixed paths resolved via `GetFullPath` before TrimStart [scripts/setup-system.ps1]
+- [x] [Review][Defer] `$Type` ValidateSet bypass by empty default — manual empty-string check covers it — deferred, pre-existing design
+- [x] [Review][Defer] Content size measured on rendered template, not raw input — minor, by design — deferred
+- [x] [Review][Defer] `[Environment]::UserInteractive` always true in PSRemoting — low priority edge case — deferred
+- [x] [Review][Defer] ACL deny check misses group-based deny rules — write-test still catches real failures — deferred
+- [x] [Review][Defer] Temp test-write file silently left on remove failure — low priority — deferred
+- [x] [Review][Defer] `Test-DiskSpace` throws on UNC paths — rare in this personal tool — deferred
+- [x] [Review][Defer] `Test-WritePermissions` double-throw obscures root cause — low priority — deferred
+- [x] [Review][Defer] `min_content_length` / `similarity_threshold` still hardcoded in health-check.ps1 — pre-existing — deferred
+
+_Group B (core lib) — 2026-04-22_
+
+- [x] [Review][Patch] YAML list items throw — fixed: skip with warning instead of throw, preserving rest of config [scripts/lib/config-loader.ps1]
+- [x] [Review][Patch] UTF-8 BOM causes silent config loss — fixed: strip BOM inline on line 1 inside foreach [scripts/lib/config-loader.ps1]
+- [x] [Review][Patch] Placeholder key with regex metacharacters — fixed: `[regex]::Escape($key)` in `-replace` pattern [scripts/lib/common.ps1]
+- [x] [Review][Patch] `Get-Config` dot-sources `config-loader.ps1` on every call — fixed: guard with `Get-Command 'Load-Config'` check [scripts/lib/common.ps1]
+- [x] [Review][Patch] `Merge-Config` scalar override wipes hashtable section — fixed: type mismatch guard keeps defaults with warning [scripts/lib/config-loader.ps1]
+- [x] [Review][Patch] Boolean fields not validated — fixed: added `$boolChecks` array to `Test-ConfigValues` [scripts/lib/config-loader.ps1]
+- [x] [Review][Patch] `Load-Config` returns stale defaults after `Initialize-Config` — fixed: re-reads written file before returning [scripts/lib/config-loader.ps1]
+- [x] [Review][Defer] `Read-YamlConfig` enforces 2-space indentation as hard rule — design decision — deferred, pre-existing
+- [x] [Review][Defer] `Initialize-Config` prints success even when no file was written — deferred, pre-existing
+- [x] [Review][Defer] `Test-ConfigPaths` checks only 3 system paths — narrow scope — deferred, pre-existing
+- [x] [Review][Defer] `Get-Template`: absent `system` key causes cwd-relative template resolution — deferred, pre-existing
+- [x] [Review][Defer] `Get-Template`: misleading error when template root directory is missing — deferred, pre-existing
+- [x] [Review][Defer] `Load-Config` relative `ConfigPath` writes to cwd — path diverges across invocations — deferred, pre-existing
+
 ## Change Log
 - 2026-04-22: Completed story 0.4 configuration management system and moved story to review.
+- 2026-04-22: Code review findings written (Group A — config layer). Status set to in-progress pending resolution.
+- 2026-04-22: Code review findings written (Group B — core lib). 7 patches, 6 deferred, 7 dismissed.
+- 2026-04-22: Code review findings written (Group C — scripts). 1 decision (B), 6 patches applied. All Group C items resolved.
+- 2026-04-22: Group D (tests) review complete. 6 new tests added covering BOM strip, YAML list skip, scalar-over-hashtable, boolean env override, working/wiki pattern validation, empty required string. 38/38 passing. Story status set to done.

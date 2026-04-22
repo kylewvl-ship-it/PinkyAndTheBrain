@@ -37,7 +37,9 @@ function Get-Config {
 
     $loaderPath = "$PSScriptRoot/config-loader.ps1"
     if (Test-Path $loaderPath) {
-        . $loaderPath
+        if (-not (Get-Command 'Load-Config' -ErrorAction SilentlyContinue)) {
+            . $loaderPath
+        }
         return Load-Config -ConfigPath $ConfigPath -Project $Project
     }
 
@@ -67,7 +69,7 @@ function Get-TimestampedFilename {
     foreach ($key in $Placeholders.Keys) {
         $safeValue = ([string]$Placeholders[$key]) -replace '[^\w\s-]', '' -replace '\s+', '-' -replace '-+', '-'
         $safeValue = $safeValue.Trim('-').ToLower()
-        $filename = $filename -replace "\{$key\}", $safeValue
+        $filename = $filename -replace "\{$([regex]::Escape($key))\}", $safeValue
     }
     return $filename + $Extension
 }
