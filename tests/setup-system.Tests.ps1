@@ -129,7 +129,11 @@ Describe "setup-system.ps1" {
 
             try {
                 # Deny write permission for current user
-                icacls $testDir /deny "${env:USERNAME}:(W,M)" /T /Q 2>&1 | Out-Null
+                $icaclsOutput = icacls $testDir /deny "${env:USERNAME}:(W,M)" /T /Q 2>&1
+                if ($LASTEXITCODE -ne 0 -or (($icaclsOutput -join "`n") -match "Failed processing [1-9]")) {
+                    Write-Warning "Skipping permission-denied assertion because icacls could not apply the test ACL in this environment."
+                    return
+                }
 
                 & $script:SetupScript -Force -SkipBackup -RootPath $testDir 2>&1 | Out-Null
                 $LASTEXITCODE | Should Be 1

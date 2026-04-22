@@ -3,9 +3,8 @@
 # Captures knowledge items with proper templates and metadata
 
 param(
-    [Parameter(Mandatory=$true)]
     [ValidateSet("manual", "web", "conversation", "clipboard", "idea")]
-    [string]$Type,
+    [string]$Type = "",
     
     [string]$Title = "",
     [string]$Content = "",
@@ -35,9 +34,33 @@ if ($Help) {
     exit 0
 }
 
+function Test-TemplateValid {
+    param(
+        [hashtable]$Fields,
+        [string[]]$RequiredKeys
+    )
+
+    foreach ($key in $RequiredKeys) {
+        if (!$Fields.ContainsKey($key) -or [string]::IsNullOrWhiteSpace([string]$Fields[$key])) {
+            Write-Log "Template validation failed. Missing required field: $key" "ERROR"
+            return $false
+        }
+    }
+    return $true
+}
+
+if ([string]::IsNullOrEmpty($Type)) {
+    Write-Log "Type parameter is required. Use -Help for usage information." "ERROR"
+    exit 1
+}
+
 try {
     # Load configuration
-    $config = Get-Config
+    $effectiveProject = if ([string]::IsNullOrWhiteSpace($Project)) { "" } else { $Project }
+    $config = Get-Config -Project $effectiveProject
+    if ([string]::IsNullOrWhiteSpace($effectiveProject)) {
+        $effectiveProject = $config.projects.default_project
+    }
     
     # Validate directory structure
     if (!(Test-DirectoryStructure $config)) {
@@ -66,8 +89,8 @@ try {
                 source_type = "manual"
                 source_url = $Url
                 source_title = ""
-                project_name_optional = $Project
-            }
+                project_name_optional = $effectiveProject
+            } -Config $config
         }
         
         "web" {
@@ -86,24 +109,24 @@ try {
                 source_type = "web"
                 source_url = $Url
                 source_title = $Title
-                project_name_optional = $Project
-            }
+                project_name_optional = $effectiveProject
+            } -Config $config
         }
         
         "conversation" {
-            if ([string]::IsNullOrEmpty($File) -or [string]::IsNullOrEmpty($Service)) {
-                Write-Log "File and Service are required for conversation import" "ERROR"
+            if ([string]::IsNullOrEmpty($Service) -or ([string]::IsNullOrEmpty($File) -and [string]::IsNullOrEmpty($Content))) {
+                Write-Log "Service and either File or Content are required for conversation import" "ERROR"
                 exit 1
             }
             
-            if (!(Test-Path $File)) {
+            if ($File -and !(Test-Path $File)) {
                 Write-Log "Conversation file not found: $File" "ERROR"
                 exit 1
             }
             
-            $conversationContent = Get-Content $File -Raw
+            $conversationContent = if ($File) { Get-Content $File -Raw } else { $Content }
             $targetFolder = "$($config.system.vault_root)/$($config.folders.raw)"
-            $filename = Get-TimestampedFilename -Title "conversation-$Service" -Pattern $config.file_naming.conversation_pattern
+            $filename = Get-TimestampedFilename -Title "conversation-$Service" -Pattern $config.file_naming.conversation_pattern -Placeholders @{ service = $Service }
             $filePath = Join-Path $targetFolder $filename
             
             $template = Get-Template "conversation-import" @{
@@ -112,7 +135,7 @@ try {
                 ai_service = $Service
                 conversation_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ")
                 import_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ")
-            }
+            } -Config $config
         }
         
         # Clipboard access with environment detection
@@ -144,8 +167,8 @@ try {
                     source_type = "clipboard"
                     source_url = ""
                     source_title = ""
-                    project_name_optional = $Project
-                }
+                    project_name_optional = $effectiveProject
+                } -Config $config
             }
             catch {
                 Write-Log "Failed to access clipboard: $($_.Exception.Message)" "ERROR"
@@ -169,8 +192,8 @@ try {
                 source_type = "idea"
                 source_url = ""
                 source_title = ""
-                project_name_optional = $Project
-            }
+                project_name_optional = $effectiveProject
+            } -Config $config
         }
     }
     
@@ -181,9 +204,14 @@ try {
     }
     
     # Check for content size limit (configurable, default 10MB)
-    $maxSize = if ($config.limits.max_content_size) { $config.limits.max_content_size } else { 10MB }
+    $maxSizeRaw = if ($config.limits -and $config.limits.max_content_size) { $config.limits.max_content_size } else { $null }
+    $maxSize = if ($maxSizeRaw) { $maxSizeRaw } else { 10MB }
     if ($template.Length -gt $maxSize) {
         Write-Log "Content exceeds $($maxSize/1MB)MB limit. Consider splitting into multiple files." "WARN"
+        if (![Environment]::UserInteractive) {
+            Write-Log "Non-interactive mode: aborting capture, content too large" "ERROR"
+            exit 1
+        }
         $response = Read-Host "Continue anyway? (y/N)"
         if ($response -ne "y" -and $response -ne "Y") {
             Write-Log "Capture cancelled by user" "INFO"
@@ -193,7 +221,7 @@ try {
     
     # Write file (or show what would be written if WhatIf)
     if ($WhatIf) {
-        Write-Host "Would create file: $filePath" -ForegroundColor Yellow
+        Write-Output "Would create file: $filePath"
         Write-Host "Content preview:" -ForegroundColor Yellow
         Write-Host ($template.Substring(0, [Math]::Min(500, $template.Length))) -ForegroundColor Gray
         if ($template.Length -gt 500) {
@@ -208,7 +236,7 @@ try {
                 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
             }
             catch {
-                Write-Log "Failed to create directory $targetDir: $($_.Exception.Message)" "ERROR"
+                Write-Log "Failed to create directory ${targetDir}: $($_.Exception.Message)" "ERROR"
                 exit 2
             }
         }
@@ -224,7 +252,7 @@ try {
             return $filePath
         }
         catch {
-            Write-Log "Failed to write file $filePath: $($_.Exception.Message)" "ERROR"
+            Write-Log "Failed to write file ${filePath}: $($_.Exception.Message)" "ERROR"
             exit 2
         }
     }

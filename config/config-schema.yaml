@@ -1,0 +1,146 @@
+# PinkyAndTheBrain Configuration Schema
+# Defines valid sections, keys, types, and constraints.
+
+sections:
+  system:
+    vault_root:
+      type: string
+      required: true
+    script_root:
+      type: string
+      required: true
+    template_root:
+      type: string
+      required: true
+
+  folders:
+    inbox:
+      type: string
+      required: true
+    raw:
+      type: string
+      required: true
+    working:
+      type: string
+      required: true
+    wiki:
+      type: string
+      required: true
+    archive:
+      type: string
+      required: true
+    schemas:
+      type: string
+      required: false
+    reviews:
+      type: string
+      required: false
+    handoffs:
+      type: string
+      required: false
+    logs:
+      type: string
+      required: false
+
+  file_naming:
+    inbox_pattern:
+      type: string
+      required: true
+      must_contain: "{title}"
+    conversation_pattern:
+      type: string
+      required: true
+      must_contain: "{service}"
+    working_pattern:
+      type: string
+      required: true
+    wiki_pattern:
+      type: string
+      required: true
+
+  review_cadence:
+    inbox_days:
+      type: integer
+      required: true
+      min: 1
+      max: 365
+    working_days:
+      type: integer
+      required: true
+      min: 1
+      max: 365
+    wiki_days:
+      type: integer
+      required: true
+      min: 1
+      max: 730
+
+  health_checks:
+    stale_threshold_months:
+      type: integer
+      required: true
+      min: 1
+      max: 36
+    min_content_length:
+      type: integer
+      required: true
+      min: 0
+      max: 10000
+    similarity_threshold:
+      type: integer
+      required: true
+      min: 1
+      max: 20
+
+  ai_handoff:
+    max_context_tokens:
+      type: integer
+      required: true
+      min: 100
+      max: 100000
+    max_wiki_tokens_per_page:
+      type: integer
+      required: true
+      min: 100
+      max: 10000
+    exclude_private:
+      type: boolean
+      required: true
+
+  projects:
+    default_project:
+      type: string
+      required: true
+    create_subfolders:
+      type: boolean
+      required: true
+    overrides:
+      type: map
+      required: false
+
+  search:
+    max_results:
+      type: integer
+      required: true
+      min: 1
+      max: 1000
+    include_archived:
+      type: boolean
+      required: true
+    case_sensitive:
+      type: boolean
+      required: true
+
+  privacy:
+    private_excluded_from_handoffs:
+      type: boolean
+      required: false
+    do_not_promote_blocks_wiki:
+      type: boolean
+      required: false
+
+  limits:
+    max_content_size:
+      type: integer
+      required: false
+      min: 1024

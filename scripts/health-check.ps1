@@ -203,7 +203,7 @@ function Test-StaleContent {
     
     $findings = @()
     $vaultRoot = $Config.system.vault_root
-    $staleThresholdMonths = 6
+    $staleThresholdMonths = $Config.health_checks.stale_threshold_months
     
     Write-Host "📅 Checking for stale content..." -ForegroundColor Cyan
     

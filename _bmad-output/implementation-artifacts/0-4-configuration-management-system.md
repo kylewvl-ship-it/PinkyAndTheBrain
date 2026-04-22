@@ -2,7 +2,7 @@
 
 **Story ID:** 0.4  
 **Epic:** 0 - System Foundation  
-**Status:** ready-for-dev  
+**Status:** review  
 **Created:** 2026-04-16  
 
 ## User Story
@@ -160,10 +160,47 @@ scripts/
 ```
 
 ## Definition of Done
-- [ ] Complete configuration schema implemented
-- [ ] Configuration validation script working
-- [ ] All existing scripts integrated with configuration system
-- [ ] Project-specific configuration overrides working
-- [ ] Error handling for all configuration scenarios
-- [ ] Documentation with configuration examples
-- [ ] Default configuration provides working system out-of-the-box
+- [x] Complete configuration schema implemented
+- [x] Configuration validation script working
+- [x] All existing scripts integrated with configuration system
+- [x] Project-specific configuration overrides working
+- [x] Error handling for all configuration scenarios
+- [x] Documentation with configuration examples
+- [x] Default configuration provides working system out-of-the-box
+
+## Dev Agent Record
+
+### Debug Log
+- Loaded BMAD config and story 0.4 context; no project-context.md was present.
+- Found existing uncommitted configuration artifacts and completed gaps surgically.
+- Full `Invoke-Pester tests` is not a usable regression gate in this repo right now: `BugConditionExploration.Tests.ps1` states it must fail, `preservation-properties.Tests.ps1` uses Pester 5 `BeforeAll` syntax under Pester 3.4, and `PreservationProperty.Tests.ps1` enters an interactive triage loop.
+
+### Completion Notes
+- Added hierarchical YAML loading with line-number parse errors, default fallback, missing-file creation, environment overrides, and project-specific config overrides.
+- Integrated configuration into capture, setup, search, triage, health-check, template loading, and project listing paths.
+- Added project-scoped search and triage filtering plus project file counts via `list-projects.ps1`.
+- Added configuration usage documentation and expanded targeted tests for nested overrides, environment overrides, invalid YAML diagnostics, conversation service filename placeholders, and setup behavior.
+- Validation passed: `validate-config.ps1`; `triage.ps1 -Project __no_such_project__ -WhatIf`; `search.ps1 -Query dummy -Project general -MaxResults 1`; `Invoke-Pester tests/config-loader.Tests.ps1,tests/capture.Tests.ps1,tests/setup-system.Tests.ps1` (42 passed, 0 failed).
+
+## File List
+- `_bmad-output/implementation-artifacts/0-4-configuration-management-system.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `config/config-schema.yaml`
+- `config/default-config.yaml`
+- `config/pinky-config.yaml`
+- `docs/configuration.md`
+- `scripts/capture.ps1`
+- `scripts/health-check.ps1`
+- `scripts/lib/common.ps1`
+- `scripts/lib/config-loader.ps1`
+- `scripts/list-projects.ps1`
+- `scripts/search.ps1`
+- `scripts/setup-system.ps1`
+- `scripts/triage.ps1`
+- `scripts/validate-config.ps1`
+- `tests/capture.Tests.ps1`
+- `tests/config-loader.Tests.ps1`
+- `tests/setup-system.Tests.ps1`
+
+## Change Log
+- 2026-04-22: Completed story 0.4 configuration management system and moved story to review.

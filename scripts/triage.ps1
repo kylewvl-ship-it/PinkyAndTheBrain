@@ -4,6 +4,7 @@
 
 param(
     [string]$SourceType = "",
+    [string]$Project = "",
     [int]$OlderThan = 0,
     [switch]$WhatIf,
     [switch]$Help
@@ -20,6 +21,7 @@ if ($Help) {
     Show-Usage "triage.ps1" "Interactive triage of inbox items" @(
         ".\scripts\triage.ps1"
         ".\scripts\triage.ps1 -SourceType web"
+        ".\scripts\triage.ps1 -Project general"
         ".\scripts\triage.ps1 -OlderThan 7"
         ".\scripts\triage.ps1 -SourceType conversation -OlderThan 3"
     )
@@ -30,6 +32,7 @@ function Get-InboxItems {
     param(
         [string]$InboxPath,
         [string]$FilterSourceType = "",
+        [string]$FilterProject = "",
         [int]$FilterOlderThan = 0
     )
     
@@ -53,6 +56,10 @@ function Get-InboxItems {
             
             # Apply filters
             if ($FilterSourceType -and $frontmatter.source_type -ne $FilterSourceType) {
+                continue
+            }
+
+            if ($FilterProject -and $frontmatter.project -ne $FilterProject) {
                 continue
             }
             
@@ -281,7 +288,7 @@ function Process-Disposition {
 
 try {
     # Load configuration
-    $config = Get-Config
+    $config = Get-Config -Project $Project
     
     # Validate directory structure
     if (!(Test-DirectoryStructure $config)) {
@@ -292,7 +299,7 @@ try {
     $inboxPath = "$($config.system.vault_root)/$($config.folders.inbox)"
     
     # Get inbox items with filters
-    $items = Get-InboxItems -InboxPath $inboxPath -FilterSourceType $SourceType -FilterOlderThan $OlderThan
+    $items = Get-InboxItems -InboxPath $inboxPath -FilterSourceType $SourceType -FilterProject $Project -FilterOlderThan $OlderThan
     
     if ($items.Count -eq 0) {
         Write-Host "📭 No inbox items found matching criteria." -ForegroundColor Yellow

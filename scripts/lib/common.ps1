@@ -30,88 +30,33 @@ function Write-Log {
 }
 
 function Get-Config {
-    param([string]$ConfigPath = "config/pinky-config.yaml")
-    
-    if (!(Test-Path $ConfigPath)) {
-        Write-Log "Configuration file not found: $ConfigPath" "WARN"
-        return @{
-            system = @{
-                vault_root = "./knowledge"
-                script_root = "./scripts"
-                template_root = "./templates"
-            }
-            folders = @{
-                inbox = "inbox"
-                raw = "raw"
-                working = "working"
-                wiki = "wiki"
-                archive = "archive"
-                schemas = "schemas"
-            }
-            file_naming = @{
-                inbox_pattern = "YYYY-MM-DD-HHMMSS-{title}"
-                conversation_pattern = "YYYY-MM-DD-HHMMSS-conversation-{service}"
-                working_pattern = "{title}"
-                wiki_pattern = "{title}"
-            }
-        }
+    param(
+        [string]$ConfigPath = "config/pinky-config.yaml",
+        [string]$Project = ""
+    )
+
+    $loaderPath = "$PSScriptRoot/config-loader.ps1"
+    if (Test-Path $loaderPath) {
+        . $loaderPath
+        return Load-Config -ConfigPath $ConfigPath -Project $Project
     }
-    
-    # Simple YAML parsing for basic config
-    $config = @{
-        system = @{
-            vault_root = "./knowledge"
-            script_root = "./scripts"
-            template_root = "./templates"
-        }
-        folders = @{
-            inbox = "inbox"
-            raw = "raw"
-            working = "working"
-            wiki = "wiki"
-            archive = "archive"
-            schemas = "schemas"
-        }
-        file_naming = @{
-            inbox_pattern = "YYYY-MM-DD-HHMMSS-{title}"
-            conversation_pattern = "YYYY-MM-DD-HHMMSS-conversation-{service}"
-            working_pattern = "{title}"
-            wiki_pattern = "{title}"
-        }
+
+    # Fallback if config-loader is missing
+    Write-Log "config-loader.ps1 not found; using built-in defaults" "WARN"
+    return @{
+        system      = @{ vault_root = "./knowledge"; script_root = "./scripts"; template_root = "./templates" }
+        folders     = @{ inbox = "inbox"; raw = "raw"; working = "working"; wiki = "wiki"; archive = "archive"; schemas = "schemas" }
+        file_naming = @{ inbox_pattern = "YYYY-MM-DD-HHMMSS-{title}"; conversation_pattern = "YYYY-MM-DD-HHMMSS-conversation-{service}"; working_pattern = "{title}"; wiki_pattern = "{title}" }
+        limits      = @{ max_content_size = 10485760 }
     }
-    
-    $currentSection = $null
-    
-    Get-Content $ConfigPath | ForEach-Object {
-        $line = $_.Trim()
-        if ($line -match '^(\w+):$') {
-            $currentSection = $matches[1]
-        }
-        elseif ($line -match '^\s+(\w+):\s*(.*)$' -and $currentSection -eq "paths") {
-            $key = $matches[1]
-            $value = $matches[2].Trim()
-            
-            # Map the config paths to our expected structure
-            switch ($key) {
-                "knowledge_root" { $config.system.vault_root = "./$value" }
-                "inbox" { $config.folders.inbox = $value -replace '^knowledge/', '' }
-                "raw" { $config.folders.raw = $value -replace '^knowledge/', '' }
-                "working" { $config.folders.working = $value -replace '^knowledge/', '' }
-                "wiki" { $config.folders.wiki = $value -replace '^knowledge/', '' }
-                "archive" { $config.folders.archive = $value -replace '^knowledge/', '' }
-                "schemas" { $config.folders.schemas = $value -replace '^knowledge/', '' }
-            }
-        }
-    }
-    
-    return $config
 }
 
 function Get-TimestampedFilename {
     param(
         [string]$Title,
         [string]$Pattern = "YYYY-MM-DD-HHMMSS-{title}",
-        [string]$Extension = ".md"
+        [string]$Extension = ".md",
+        [hashtable]$Placeholders = @{}
     )
     
     $timestamp = Get-Date -Format "yyyy-MM-dd-HHmmss"
@@ -119,6 +64,11 @@ function Get-TimestampedFilename {
     $safeTitle = $safeTitle.Trim('-').ToLower()
     
     $filename = $Pattern -replace 'YYYY-MM-DD-HHMMSS', $timestamp -replace '\{title\}', $safeTitle
+    foreach ($key in $Placeholders.Keys) {
+        $safeValue = ([string]$Placeholders[$key]) -replace '[^\w\s-]', '' -replace '\s+', '-' -replace '-+', '-'
+        $safeValue = $safeValue.Trim('-').ToLower()
+        $filename = $filename -replace "\{$key\}", $safeValue
+    }
     return $filename + $Extension
 }
 
@@ -153,10 +103,13 @@ function Test-DirectoryStructure {
 function Get-Template {
     param(
         [string]$TemplateName,
-        [hashtable]$Variables = @{}
+        [hashtable]$Variables = @{},
+        [hashtable]$Config = $null
     )
     
-    $templatePath = "templates/$TemplateName.md"
+    if ($null -eq $Config) { $Config = Get-Config }
+    $templateRoot = if ($Config.system.template_root) { $Config.system.template_root } else { "templates" }
+    $templatePath = Join-Path $templateRoot "$TemplateName.md"
     if (!(Test-Path $templatePath)) {
         Write-Log "Template not found: $templatePath" "ERROR"
         return $null
@@ -165,23 +118,21 @@ function Get-Template {
     try {
         $template = Get-Content $templatePath -Raw
         
-        # Replace variables in template with validation
+        # Replace variables using literal string replacement to avoid regex backreference issues
         foreach ($key in $Variables.Keys) {
             $value = $Variables[$key]
-            if ($value -eq $null) { $value = "" }
-            # Escape special regex characters in the key for safe replacement
-            $escapedKey = [regex]::Escape($key)
-            $template = $template -replace "\{\{$escapedKey\}\}", $value
+            if ($null -eq $value) { $value = "" }
+            $template = $template.Replace("{{$key}}", [string]$value)
         }
-        
+
         # Replace timestamp placeholders
         $timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ"
-        $template = $template -replace '\{\{timestamp\}\}', $timestamp
+        $template = $template.Replace('{{timestamp}}', $timestamp)
         
         return $template
     }
     catch {
-        Write-Log "Error processing template $templatePath: $($_.Exception.Message)" "ERROR"
+        Write-Log "Error processing template ${templatePath}: $($_.Exception.Message)" "ERROR"
         return $null
     }
 }

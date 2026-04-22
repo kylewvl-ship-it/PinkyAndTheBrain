@@ -10,6 +10,8 @@ $ErrorActionPreference = "Stop"
 $Root = if ($RootPath) { $RootPath } else { (Resolve-Path (Join-Path $PSScriptRoot "..")).Path }
 $LogDir = [System.IO.Path]::Combine($Root, "logs")
 $LogPath = [System.IO.Path]::Combine($LogDir, "setup.log")
+$ConfigPath = [System.IO.Path]::Combine($Root, "config", "pinky-config.yaml")
+$Config = $null
 
 function Write-Log {
     param([string]$Message)
@@ -20,8 +22,9 @@ function Write-Log {
 function Test-DiskSpace {
     param([string]$Path, [long]$RequiredBytes = 100MB)
     try {
-        $drive = (Get-Item $Path).PSDrive
-        $freeSpace = $drive.Free
+        $rootPath = [System.IO.Path]::GetPathRoot((Resolve-Path $Path -ErrorAction Stop).Path)
+        $drive = New-Object System.IO.DriveInfo($rootPath)
+        $freeSpace = $drive.AvailableFreeSpace
         if ($freeSpace -lt $RequiredBytes) {
             throw "Insufficient disk space. Required: $([math]::Round($RequiredBytes/1MB, 2))MB, Available: $([math]::Round($freeSpace/1MB, 2))MB"
         }
@@ -36,6 +39,23 @@ function Test-DiskSpace {
 function Test-WritePermissions {
     param([string]$Path)
     try {
+        $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        $shortUser = $env:USERNAME
+        $writeRights = [System.Security.AccessControl.FileSystemRights]::Write -bor
+            [System.Security.AccessControl.FileSystemRights]::Modify -bor
+            [System.Security.AccessControl.FileSystemRights]::FullControl -bor
+            [System.Security.AccessControl.FileSystemRights]::WriteData
+
+        $denyRule = Get-Acl $Path | Select-Object -ExpandProperty Access | Where-Object {
+            $_.AccessControlType -eq "Deny" -and
+            ($_.IdentityReference.Value -eq $currentUser -or $_.IdentityReference.Value -like "*\$shortUser") -and
+            (($_.FileSystemRights -band $writeRights) -ne 0)
+        } | Select-Object -First 1
+
+        if ($denyRule) {
+            throw "Insufficient permissions to write to $Path. Try running as Administrator."
+        }
+
         $testFile = Join-Path $Path "test-write-$(Get-Random).tmp"
         Set-Content -Path $testFile -Value "test" -ErrorAction Stop
         Remove-Item $testFile -Force -ErrorAction SilentlyContinue
@@ -187,6 +207,14 @@ function Ensure-File {
     Write-Log "Wrote file $Path"
 }
 
+function Resolve-ConfiguredPath {
+    param([string]$RootPath, [string]$Path)
+
+    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    $relative = $Path.TrimStart('.', '/', '\')
+    return Join-Path $RootPath $relative
+}
+
 # Handle rollback mode
 if ($Rollback) {
     if (-not $BackupPath) {
@@ -221,37 +249,54 @@ try {
         Write-Log "Backup created at: $backupPath"
     }
 
+    if (Test-Path "$PSScriptRoot/lib/config-loader.ps1") {
+        . "$PSScriptRoot/lib/config-loader.ps1"
+        $Config = Load-Config -ConfigPath $ConfigPath
+    }
+    else {
+        $Config = @{
+            system = @{ vault_root = "./knowledge"; script_root = "./scripts"; template_root = "./templates" }
+            folders = @{ inbox = "inbox"; raw = "raw"; working = "working"; wiki = "wiki"; archive = "archive"; schemas = "schemas"; reviews = "reviews" }
+        }
+    }
+
     Write-Host "Creating folder structure..." -ForegroundColor Yellow
+    $vaultRoot = Resolve-ConfiguredPath -RootPath $Root -Path $Config.system.vault_root
+    $scriptRoot = Resolve-ConfiguredPath -RootPath $Root -Path $Config.system.script_root
+    $templateRoot = Resolve-ConfiguredPath -RootPath $Root -Path $Config.system.template_root
+
     $requiredDirs = @(
-        "knowledge/inbox", "knowledge/raw", "knowledge/working", "knowledge/wiki",
-        "knowledge/schemas", "knowledge/archive", "knowledge/reviews",
-        "scripts", "templates", ".ai/handoffs", ".ai/policies", "config", "logs", "backups", "quarantine"
+        (Join-Path $vaultRoot $Config.folders.inbox),
+        (Join-Path $vaultRoot $Config.folders.raw),
+        (Join-Path $vaultRoot $Config.folders.working),
+        (Join-Path $vaultRoot $Config.folders.wiki),
+        (Join-Path $vaultRoot $Config.folders.schemas),
+        (Join-Path $vaultRoot $Config.folders.archive),
+        (Join-Path $vaultRoot $Config.folders.reviews),
+        $scriptRoot, $templateRoot, ".ai/handoffs", ".ai/policies", "config", "logs", "backups", "quarantine"
     )
 
     foreach ($dir in $requiredDirs) {
-        Ensure-Directory (Join-Path $Root $dir)
+        $targetDir = if ([System.IO.Path]::IsPathRooted($dir)) { $dir } else { Join-Path $Root $dir }
+        Ensure-Directory $targetDir
     }
     Write-Log "Folder structure created"
 
     Write-Host "Creating index files..." -ForegroundColor Yellow
     $indexFiles = @{
-        "knowledge/inbox/index.md" = "# Inbox`n`nLow-friction capture area for new items awaiting triage.`n"
-        "knowledge/raw/index.md" = "# Raw`n`nPreserved source material before interpretation.`n"
-        "knowledge/working/index.md" = "# Working`n`nActive thinking, synthesis, contradictions, and open questions.`n"
-        "knowledge/wiki/index.md" = "# Wiki`n`nDurable, sourced knowledge promoted after review.`n"
-        "knowledge/archive/index.md" = "# Archive`n`nRetired or low-confidence material excluded from default retrieval.`n"
-        "knowledge/reviews/index.md" = "# Reviews`n`nHealth reports and repair decisions.`n"
-        "knowledge/schemas/index.md" = "# Schemas`n`nHuman-readable metadata contracts and templates.`n"
+        (Join-Path (Join-Path $vaultRoot $Config.folders.inbox) "index.md") = "# Inbox`n`nLow-friction capture area for new items awaiting triage.`n"
+        (Join-Path (Join-Path $vaultRoot $Config.folders.raw) "index.md") = "# Raw`n`nPreserved source material before interpretation.`n"
+        (Join-Path (Join-Path $vaultRoot $Config.folders.working) "index.md") = "# Working`n`nActive thinking, synthesis, contradictions, and open questions.`n"
+        (Join-Path (Join-Path $vaultRoot $Config.folders.wiki) "index.md") = "# Wiki`n`nDurable, sourced knowledge promoted after review.`n"
+        (Join-Path (Join-Path $vaultRoot $Config.folders.archive) "index.md") = "# Archive`n`nRetired or low-confidence material excluded from default retrieval.`n"
+        (Join-Path (Join-Path $vaultRoot $Config.folders.reviews) "index.md") = "# Reviews`n`nHealth reports and repair decisions.`n"
+        (Join-Path (Join-Path $vaultRoot $Config.folders.schemas) "index.md") = "# Schemas`n`nHuman-readable metadata contracts and templates.`n"
     }
 
     foreach ($path in $indexFiles.Keys) {
-        Ensure-File -Path (Join-Path $Root $path) -Content $indexFiles[$path]
+        Ensure-File -Path $path -Content $indexFiles[$path]
     }
     Write-Log "Index files created"
-
-    if (-not (Test-Path (Join-Path $Root "config/pinky-config.yaml"))) {
-        Write-Warning "config/pinky-config.yaml is missing. Restore it from version control or create it before running automation."
-    }
 
     Write-Host "PinkyAndTheBrain setup complete." -ForegroundColor Green
     Write-Log "Setup completed successfully"
@@ -285,4 +330,3 @@ catch {
     Write-Host "Setup failed. Check logs at: $LogPath" -ForegroundColor Red
     exit 1
 }
-

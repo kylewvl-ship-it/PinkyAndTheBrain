@@ -38,6 +38,7 @@ Describe "capture.ps1 - conversation type routes to knowledge/raw" {
         $new = @($after | Where-Object { $_ -notin $before })
         $new.Count | Should Be 1
         $new[0] -like "*knowledge*raw*" | Should Be $true
+        $new[0] -like "*claude*" | Should Be $true
         Remove-Item $new[0] -Force
     }
 }

@@ -7,7 +7,8 @@ param(
     [string]$Query,
     
     [string]$Layers = "all",
-    [int]$MaxResults = 20,
+    [int]$MaxResults = 0,
+    [string]$Project = "",
     [switch]$IncludeArchived,
     [switch]$CaseSensitive,
     [switch]$Help
@@ -25,6 +26,7 @@ if ($Help) {
         ".\scripts\search.ps1 -Query 'search term'"
         ".\scripts\search.ps1 -Query 'PowerShell' -Layers 'wiki,working'"
         ".\scripts\search.ps1 -Query 'project' -MaxResults 10"
+        ".\scripts\search.ps1 -Query 'project' -Project general"
         ".\scripts\search.ps1 -Query 'archived content' -IncludeArchived"
     )
     exit 0
@@ -69,6 +71,7 @@ function Search-Files {
     param(
         [hashtable]$Layers,
         [string]$Query,
+        [string]$Project = "",
         [switch]$CaseSensitive,
         [int]$MaxResults
     )
@@ -106,26 +109,31 @@ function Search-Files {
                     }
                 }
                 
+                if ($Project -and $frontmatter.project -ne $Project) {
+                    continue
+                }
+
                 # Calculate relevance score
                 $relevanceScore = 0
                 $matchType = ""
                 
                 # Title match (highest priority)
                 $title = if ($frontmatter.title) { $frontmatter.title } else { [System.IO.Path]::GetFileNameWithoutExtension($file.Name) }
-                if ($title -like "*$Query*") {
+                if (($CaseSensitive -and $title -clike "*$Query*") -or (!$CaseSensitive -and $title -like "*$Query*")) {
                     $relevanceScore += 100
                     $matchType = "Title"
                 }
                 
                 # Exact content match
-                if ($contentBody -like "*$Query*") {
+                if (($CaseSensitive -and $contentBody -clike "*$Query*") -or (!$CaseSensitive -and $contentBody -like "*$Query*")) {
                     $relevanceScore += 50
                     if ($matchType -eq "") { $matchType = "Content" }
                 }
                 
                 # Metadata match
                 foreach ($key in $frontmatter.Keys) {
-                    if ($frontmatter[$key] -like "*$Query*") {
+                    $metadataValue = [string]$frontmatter[$key]
+                    if (($CaseSensitive -and $metadataValue -clike "*$Query*") -or (!$CaseSensitive -and $metadataValue -like "*$Query*")) {
                         $relevanceScore += 25
                         if ($matchType -eq "") { $matchType = "Metadata" }
                     }
@@ -235,7 +243,10 @@ function Show-SearchResults {
 
 try {
     # Load configuration
-    $config = Get-Config
+    $config = Get-Config -Project $Project
+    if (!$PSBoundParameters.ContainsKey('MaxResults') -or $MaxResults -le 0) { $MaxResults = $config.search.max_results }
+    $includeArchivedEffective = if ($PSBoundParameters.ContainsKey('IncludeArchived')) { $IncludeArchived.IsPresent } else { [bool]$config.search.include_archived }
+    $caseSensitiveEffective = if ($PSBoundParameters.ContainsKey('CaseSensitive')) { $CaseSensitive.IsPresent } else { [bool]$config.search.case_sensitive }
     
     # Validate directory structure
     if (!(Test-DirectoryStructure $config)) {
@@ -244,7 +255,7 @@ try {
     }
     
     # Get layer folders to search
-    $layersToSearch = Get-LayerFolders -Config $config -LayerSpec $Layers -IncludeArchived:$IncludeArchived
+    $layersToSearch = Get-LayerFolders -Config $config -LayerSpec $Layers -IncludeArchived:$includeArchivedEffective
     
     if ($layersToSearch.Count -eq 0) {
         Write-Host "❌ No valid layers specified. Available layers: inbox, raw, working, wiki, archive" -ForegroundColor Red
@@ -254,7 +265,7 @@ try {
     Write-Host "🔍 Searching layers: $($layersToSearch.Keys -join ', ')" -ForegroundColor Cyan
     
     # Perform search
-    $results = Search-Files -Layers $layersToSearch -Query $Query -CaseSensitive:$CaseSensitive -MaxResults $MaxResults
+    $results = Search-Files -Layers $layersToSearch -Query $Query -Project $Project -CaseSensitive:$caseSensitiveEffective -MaxResults $MaxResults
     
     # Display results
     Show-SearchResults -Results $results -Query $Query
