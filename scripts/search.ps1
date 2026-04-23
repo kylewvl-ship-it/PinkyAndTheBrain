@@ -13,6 +13,7 @@ param(
     [switch]$IncludeArchived,
     [switch]$CaseSensitive,
     [int]$Open = 0,
+    [switch]$Diagnose,
     [switch]$Help
 )
 
@@ -541,11 +542,300 @@ function Show-FileContent {
     }
 }
 
+function Get-CleanFilenameStem {
+    param([string]$FileName)
+
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
+    $stem = $stem -replace '^\d{4}-\d{2}-\d{2}-\d{6}-', ''
+    $stem = $stem -replace '^\d{4}-\d{2}-\d{2}-', ''
+    return $stem
+}
+
+function Get-LevenshteinDistance {
+    param(
+        [string]$A,
+        [string]$B
+    )
+
+    $a = if ($null -eq $A) { '' } else { $A.ToLowerInvariant() }
+    $b = if ($null -eq $B) { '' } else { $B.ToLowerInvariant() }
+    $m = $a.Length
+    $n = $b.Length
+    $d = New-Object 'int[,]' ($m + 1), ($n + 1)
+
+    for ($i = 0; $i -le $m; $i++) { $d[$i, 0] = $i }
+    for ($j = 0; $j -le $n; $j++) { $d[0, $j] = $j }
+
+    for ($i = 1; $i -le $m; $i++) {
+        for ($j = 1; $j -le $n; $j++) {
+            $cost = if ($a[$i - 1] -eq $b[$j - 1]) { 0 } else { 1 }
+            $deleteCost = $d[($i - 1), $j] + 1
+            $insertCost = $d[$i, ($j - 1)] + 1
+            $replaceCost = $d[($i - 1), ($j - 1)] + $cost
+            $d[$i, $j] = [Math]::Min([Math]::Min($deleteCost, $insertCost), $replaceCost)
+        }
+    }
+
+    return $d[$m, $n]
+}
+
+function Invoke-SearchDiagnostics {
+    param(
+        [string]$Query,
+        [hashtable]$Config,
+        $LayerDefs
+    )
+
+    $diagnosticLayers = Get-LayerDefinitions -Config $Config
+    $repoRoot = Get-RepoRoot
+    $cleanQuery = Get-CleanFilenameStem -FileName $Query
+    $filenameMatches = @{}
+    $contentMatches = @{}
+    $similarMatches = @()
+    $metadataMatches = @()
+    $corruptedByLayer = @{}
+    $layerFiles = @{}
+
+    foreach ($layerName in $diagnosticLayers.Keys) {
+        $filenameMatches[$layerName] = @()
+        $contentMatches[$layerName] = @()
+        $corruptedByLayer[$layerName] = @()
+
+        $layer = $diagnosticLayers[$layerName]
+        $files = @()
+        $folderMissing = $false
+
+        if (Test-Path $layer.Path) {
+            $files = @(Get-ChildItem -Path $layer.Path -Filter "*.md" -Recurse -File -ErrorAction SilentlyContinue)
+        }
+        else {
+            $folderMissing = $true
+        }
+
+        $layerFiles[$layerName] = @{
+            Layer = $layer
+            Files = $files
+            FolderMissing = $folderMissing
+        }
+
+        foreach ($file in $files) {
+            $relativePath = Get-RelativeRepoPath -Path $file.FullName -RepoRoot $repoRoot
+            $cleanStem = Get-CleanFilenameStem -FileName $file.Name
+
+            if ($cleanStem.IndexOf($Query, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                if ($filenameMatches[$layerName].Count -lt 5) {
+                    $filenameMatches[$layerName] += [PSCustomObject]@{
+                        Layer = $layer.Label
+                        Path = $relativePath
+                    }
+                }
+            }
+
+            $distance = Get-LevenshteinDistance -A $cleanQuery -B $cleanStem
+            if ($distance -lt 3) {
+                $similarMatches += [PSCustomObject]@{
+                    Layer = $layer.Label
+                    LayerName = $layerName
+                    Path = $relativePath
+                    Distance = $distance
+                    Stem = $cleanStem
+                }
+            }
+
+            try {
+                $content = Get-Content -Path $file.FullName -Raw -Encoding UTF8
+            }
+            catch {
+                $corruptedByLayer[$layerName] += $relativePath
+                continue
+            }
+
+            $frontmatterData = Get-FrontmatterData -Content $content
+            if ($null -eq $frontmatterData) {
+                $corruptedByLayer[$layerName] += $relativePath
+                continue
+            }
+
+            if (Test-ContainsValue -Text $frontmatterData.Body -Needle $Query) {
+                if ($contentMatches[$layerName].Count -lt 5) {
+                    $contentMatches[$layerName] += [PSCustomObject]@{
+                        Layer = $layer.Label
+                        Path = $relativePath
+                    }
+                }
+            }
+
+            foreach ($line in ($frontmatterData.Frontmatter -split "`r?`n")) {
+                if ($line -notmatch '^\s*([A-Za-z0-9_-]+)\s*:\s*(.+?)\s*$') {
+                    continue
+                }
+
+                $fieldName = $matches[1]
+                $rawValue = $matches[2].Trim()
+                $fieldValues = @($rawValue -split ',')
+                foreach ($fieldValue in $fieldValues) {
+                    $normalizedValue = $fieldValue.Trim().Trim('"').Trim("'").Trim('[', ']')
+                    if ($normalizedValue -eq '') {
+                        continue
+                    }
+
+                    if (Test-ContainsValue -Text $normalizedValue -Needle $Query) {
+                        if ($metadataMatches.Count -lt 5) {
+                            $metadataMatches += [PSCustomObject]@{
+                                Layer = $layer.Label
+                                Path = $relativePath
+                                Field = $fieldName
+                                Value = $normalizedValue
+                            }
+                        }
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    Write-Host "--- Search Diagnostics for `"$Query`" ---" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Layer File Counts:"
+    foreach ($layerName in @('wiki', 'working', 'raw', 'tasks', 'archive')) {
+        $layerInfo = $layerFiles[$layerName]
+        $layer = $layerInfo.Layer
+        $countText = "{0,3} files" -f $layerInfo.Files.Count
+        $suffix = if ($layerInfo.FolderMissing) { " (folder missing)" } else { "" }
+        $corruptedCount = $corruptedByLayer[$layerName].Count
+        $corruptedSuffix = if ($corruptedCount -gt 0) { " | corrupted frontmatter: $corruptedCount" } else { "" }
+        Write-Host ("  [{0}] {1} -> {2}{3}{4}" -f $layer.Label, $countText, $layer.Path, $suffix, $corruptedSuffix)
+        foreach ($corruptedPath in ($corruptedByLayer[$layerName] | Select-Object -First 3)) {
+            Write-Host "    unreadable: $corruptedPath"
+        }
+    }
+
+    Write-Host ""
+    Write-Host "Case-Insensitive Filename Matches:"
+    $filenameMatchCount = 0
+    foreach ($layerName in @('wiki', 'working', 'raw', 'tasks', 'archive')) {
+        foreach ($match in $filenameMatches[$layerName]) {
+            Write-Host ("  [{0}] {1}" -f $match.Layer, $match.Path)
+            $filenameMatchCount++
+        }
+    }
+    if ($filenameMatchCount -eq 0) {
+        Write-Host "  None found."
+    }
+
+    Write-Host ""
+    Write-Host "Case-Insensitive Content Matches:"
+    $contentMatchCount = 0
+    foreach ($layerName in @('wiki', 'working', 'raw', 'tasks', 'archive')) {
+        foreach ($match in $contentMatches[$layerName]) {
+            Write-Host ("  [{0}] {1}" -f $match.Layer, $match.Path)
+            $contentMatchCount++
+        }
+    }
+    if ($contentMatchCount -eq 0) {
+        Write-Host "  None found."
+    }
+
+    Write-Host ""
+    Write-Host "Similar Filenames (edit distance < 3):"
+    $topSimilar = @(
+        $similarMatches |
+            Sort-Object @{ Expression = 'Distance'; Ascending = $true }, @{ Expression = 'Path'; Ascending = $true } |
+            Select-Object -First 5
+    )
+    if ($topSimilar.Count -eq 0) {
+        Write-Host "  None found."
+    }
+    else {
+        foreach ($match in $topSimilar) {
+            Write-Host ("  [{0}] {1} (distance: {2})" -f $match.Layer, $match.Path, $match.Distance)
+        }
+    }
+
+    Write-Host ""
+    Write-Host "Frontmatter Metadata Matches:"
+    if ($metadataMatches.Count -eq 0) {
+        Write-Host "  None found."
+    }
+    else {
+        foreach ($match in $metadataMatches) {
+            Write-Host ("  [{0}] {1} (field: {2})" -f $match.Layer, $match.Path, $match.Field)
+        }
+    }
+
+    Write-Host ""
+    Write-Host "Files with Missing/Corrupted Frontmatter:"
+    $corruptedTotal = 0
+    foreach ($layerName in @('wiki', 'working', 'raw', 'tasks', 'archive')) {
+        $paths = @($corruptedByLayer[$layerName])
+        if ($paths.Count -eq 0) {
+            continue
+        }
+        $corruptedTotal += $paths.Count
+        $label = $layerFiles[$layerName].Layer.Label
+        Write-Host ("  [{0}] {1} file(s) with unreadable frontmatter:" -f $label, $paths.Count)
+        foreach ($path in ($paths | Select-Object -First 3)) {
+            Write-Host "    $path"
+        }
+    }
+    if ($corruptedTotal -eq 0) {
+        Write-Host "  None found."
+    }
+
+    Write-Host ""
+    Write-Host "Actionable Suggestions:"
+    $suggestions = @(
+        [PSCustomObject]@{
+            Description = "Check archived content:"
+            Command = ".\scripts\search.ps1 -Query `"$Query`" -Archive"
+        }
+    )
+
+    foreach ($match in ($topSimilar | Select-Object LayerName,Layer,Stem -Unique)) {
+        $layerSwitch = switch ($match.LayerName) {
+            'wiki' { '-Wiki' }
+            'working' { '-Working' }
+            'raw' { '-Raw' }
+            'tasks' { '-Tasks' }
+            'archive' { '-Archive' }
+            default { '' }
+        }
+        if ($layerSwitch -and $match.Stem) {
+            $suggestions += [PSCustomObject]@{
+                Description = "Try similar filename term `"$($match.Stem)`" in [$($match.Layer)]:"
+                Command = ".\scripts\search.ps1 -Query `"$($match.Stem)`" $layerSwitch"
+            }
+        }
+    }
+
+    if ($metadataMatches.Count -gt 0) {
+        $matchedValue = $metadataMatches[0].Value.Replace('"', '')
+        $suggestions += [PSCustomObject]@{
+            Description = "Try the matched metadata value as a query:"
+            Command = ".\scripts\search.ps1 -Query `"$matchedValue`""
+        }
+    }
+
+    if ($corruptedTotal -gt 0) {
+        $suggestions += [PSCustomObject]@{
+            Description = "Fix missing metadata affecting search coverage:"
+            Command = ".\scripts\health-check.ps1 -Type metadata"
+        }
+    }
+
+    for ($i = 0; $i -lt $suggestions.Count; $i++) {
+        Write-Host ("  {0}. {1}" -f ($i + 1), $suggestions[$i].Description)
+        Write-Host ("       {0}" -f $suggestions[$i].Command)
+    }
+}
+
 if ($Help) {
     Show-Usage "search.ps1" "Search across knowledge layers and open a result in the terminal" @(
         ".\scripts\search.ps1 -Query 'PowerShell'"
         ".\scripts\search.ps1 -Query 'metadata' -Wiki -Working"
         ".\scripts\search.ps1 -Query 'old topic' -Archive"
+        ".\scripts\search.ps1 -Query 'missing topic' -Diagnose"
         ".\scripts\search.ps1 -Query 'frontmatter' -Open 2"
     )
     exit 0
@@ -585,6 +875,11 @@ try {
     Write-Host "Searching layers: $($selectedLayers.Keys -join ', ')" -ForegroundColor Cyan
     $results = @(Search-Files -Layers $selectedLayers -Query $Query -Project $Project -CaseSensitive:$CaseSensitive -MaxResults $MaxResults)
     Show-SearchResults -Results $results -Query $Query -MaxResults $MaxResults
+
+    if ($Diagnose) {
+        Write-Host ""
+        Invoke-SearchDiagnostics -Query $Query -Config $config -LayerDefs (Get-LayerDefinitions -Config $config)
+    }
 
     if ($Open -gt 0) {
         if ($Open -gt $results.Count) {
