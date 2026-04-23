@@ -48,7 +48,7 @@ function Get-Config {
     return @{
         system      = @{ vault_root = "./knowledge"; script_root = "./scripts"; template_root = "./templates" }
         folders     = @{ inbox = "inbox"; raw = "raw"; working = "working"; wiki = "wiki"; archive = "archive"; schemas = "schemas" }
-        file_naming = @{ inbox_pattern = "YYYY-MM-DD-HHMMSS-{title}"; conversation_pattern = "YYYY-MM-DD-HHMMSS-conversation-{service}"; working_pattern = "{title}"; wiki_pattern = "{title}" }
+        file_naming = @{ inbox_pattern = "YYYY-MM-DD-HHMMSSfff-{title}"; conversation_pattern = "YYYY-MM-DD-HHMMSS-conversation-{service}"; working_pattern = "{title}"; wiki_pattern = "{title}" }
         limits      = @{ max_content_size = 10485760 }
     }
 }
@@ -56,16 +56,16 @@ function Get-Config {
 function Get-TimestampedFilename {
     param(
         [string]$Title,
-        [string]$Pattern = "YYYY-MM-DD-HHMMSS-{title}",
+        [string]$Pattern = "YYYY-MM-DD-HHMMSSfff-{title}",
         [string]$Extension = ".md",
         [hashtable]$Placeholders = @{}
     )
     
-    $timestamp = Get-Date -Format "yyyy-MM-dd-HHmmss"
+    $timestamp = Get-Date -Format "yyyy-MM-dd-HHmmssfff"
     $safeTitle = $Title -replace '[^\w\s-]', '' -replace '\s+', '-' -replace '-+', '-'
     $safeTitle = $safeTitle.Trim('-').ToLower()
     
-    $filename = $Pattern -replace 'YYYY-MM-DD-HHMMSS', $timestamp -replace '\{title\}', $safeTitle
+    $filename = $Pattern -replace 'YYYY-MM-DD-HHMMSSfff', $timestamp -replace 'YYYY-MM-DD-HHMMSS', $timestamp -replace '\{title\}', $safeTitle
     foreach ($key in $Placeholders.Keys) {
         $safeValue = ([string]$Placeholders[$key]) -replace '[^\w\s-]', '' -replace '\s+', '-' -replace '-+', '-'
         $safeValue = $safeValue.Trim('-').ToLower()

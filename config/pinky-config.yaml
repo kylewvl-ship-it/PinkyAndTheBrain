@@ -23,7 +23,7 @@ folders:
   logs: "logs"
 
 file_naming:
-  inbox_pattern: "YYYY-MM-DD-HHMMSS-{title}"
+  inbox_pattern: "YYYY-MM-DD-HHMMSSfff-{title}"
   conversation_pattern: "YYYY-MM-DD-HHMMSS-conversation-{service}"
   working_pattern: "{title}"
   wiki_pattern: "{title}"

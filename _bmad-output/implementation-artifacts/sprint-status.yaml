@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-15T00:00:00.000Z
-last_updated: 2026-04-22T22:25:00.000Z
+last_updated: 2026-04-23T00:00:00.000Z
 project: PinkyAndTheBrain
 project_key: NOKEY
 tracking_system: file-system
@@ -52,8 +52,8 @@ development_status:
   epic-0-retrospective: optional
   
   # Epic 1: Basic Knowledge Lifecycle
-  epic-1: backlog
-  1-1-quick-knowledge-capture: backlog
+  epic-1: in-progress
+  1-1-quick-knowledge-capture: done
   1-2-inbox-triage-workflow: backlog
   1-3-working-note-creation-and-management: backlog
   epic-1-retrospective: optional
