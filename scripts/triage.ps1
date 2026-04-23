@@ -68,8 +68,16 @@ function Get-InboxItems {
             }
             
             if ($FilterOlderThan -gt 0) {
-                $fileAge = (Get-Date) - $file.LastWriteTime
-                if ($fileAge.Days -lt $FilterOlderThan) {
+                $ageReference = $file.LastWriteTime
+                if ($frontmatter.ContainsKey("captured_date")) {
+                    $parsedCaptureDate = [datetime]::MinValue
+                    if ([datetime]::TryParse($frontmatter.captured_date, [ref]$parsedCaptureDate)) {
+                        $ageReference = $parsedCaptureDate
+                    }
+                }
+
+                $fileAge = (Get-Date) - $ageReference
+                if ($fileAge.TotalDays -lt $FilterOlderThan) {
                     continue
                 }
             }
@@ -113,7 +121,7 @@ function Show-InboxItems {
     
     foreach ($item in $Items) {
         Write-Host "$($item.Index). " -NoNewline -ForegroundColor White
-        Write-Host "$($item.Title)" -NoNewline -ForegroundColor Green
+        Write-Host "$($item.FileName)" -NoNewline -ForegroundColor Green
         Write-Host " [$($item.SourceType)]" -NoNewline -ForegroundColor Yellow
         Write-Host " ($($item.CaptureDate))" -ForegroundColor Gray
         Write-Host "   $($item.Preview)" -ForegroundColor Gray
@@ -134,13 +142,21 @@ function Get-UserSelection {
     Write-Host "Wiki-[C]andidate - Mark for wiki promotion" -ForegroundColor Magenta
     Write-Host "[Q]uit - Exit without changes" -ForegroundColor Gray
     Write-Host ""
-    
-    $selection = Read-Host "Select items (e.g., '1,3,5' or '1-5') and disposition (e.g., '1,3 D')"
+
+    $selection = Get-TriagePromptValue -EnvironmentVariable "PINKY_TRIAGE_SELECTION" -Prompt "Select items (e.g., '1,3,5', '1-5', or 'all') and disposition (e.g., '1,3 D' or 'all W')" -DefaultValue "q"
     
     if ($selection -match '^q$|^quit$') {
         return @{ Action = "quit" }
     }
-    
+
+    if ($selection -match '^all\s+([DARWC])$') {
+        return @{
+            Action = "process"
+            Items = 1..$MaxIndex
+            Disposition = $matches[1].ToUpper()
+        }
+    }
+
     # Parse selection
     if ($selection -match '^([\d,\-\s]+)\s+([DARWC])$') {
         $itemsStr = $matches[1].Trim()
@@ -181,6 +197,44 @@ function Get-UserSelection {
     return @{ Action = "invalid" }
 }
 
+function Test-TriageInteractive {
+    if ([Environment]::GetEnvironmentVariable('PINKY_FORCE_NONINTERACTIVE') -eq '1') {
+        return $false
+    }
+
+    return ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected)
+}
+
+function Get-TriagePromptValue {
+    param(
+        [string]$EnvironmentVariable,
+        [string]$Prompt,
+        [string]$DefaultValue = ""
+    )
+
+    $envValue = [Environment]::GetEnvironmentVariable($EnvironmentVariable)
+    if ($null -ne $envValue -and $envValue -ne "") {
+        [Environment]::SetEnvironmentVariable($EnvironmentVariable, $null)
+        return $envValue
+    }
+
+    if (Test-TriageInteractive) {
+        return Read-Host $Prompt
+    }
+
+    return $DefaultValue
+}
+
+function Ensure-TriageTargetDirectory {
+    param([string]$TargetPath)
+
+    $targetDir = Split-Path $TargetPath -Parent
+    if (!(Test-Path $targetDir)) {
+        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+        Write-Log "Created missing folder: $targetDir" "INFO" "logs/triage-actions.log"
+    }
+}
+
 function Process-Disposition {
     param(
         [array]$Items,
@@ -196,104 +250,150 @@ function Process-Disposition {
     
     Write-Host "`nProcessing $($selectedItems.Count) items with disposition: $Disposition" -ForegroundColor Cyan
     
-    foreach ($item in $selectedItems) {
-        $sourcePath = $item.FullPath
-        
-        switch ($Disposition) {
-            "D" {
-                # Delete
+    switch ($Disposition) {
+        "D" {
+            Write-Host "`nItems to be deleted:" -ForegroundColor Yellow
+            foreach ($i in $selectedItems) {
+                Write-Host "  - $($i.FileName)" -ForegroundColor Red
+            }
+
+            $confirm = Get-TriagePromptValue -EnvironmentVariable "PINKY_CONFIRM_DELETE" -Prompt "Confirm deletion? (y/N)" -DefaultValue "N"
+            if ($confirm -notmatch '^[yY]$') {
+                Write-Host "Deletion cancelled." -ForegroundColor Gray
+                break
+            }
+
+            $deletedNames = @()
+            $failedNames = @()
+            foreach ($item in $selectedItems) {
                 if ($WhatIf) {
                     Write-Host "Would delete: $($item.FileName)" -ForegroundColor Yellow
+                    continue
                 }
-                else {
-                    Remove-Item $sourcePath -Force
-                    $changedFiles += $sourcePath
+
+                try {
+                    Remove-Item $item.FullPath -Force -ErrorAction Stop
+                    $deletedNames += $item.FileName
+                    $changedFiles += $item.FullPath
                     Write-Log "Deleted item: $($item.FileName)" "INFO" "logs/triage-actions.log"
-                    Write-Host "🗑️  Deleted: $($item.FileName)" -ForegroundColor Red
+                }
+                catch {
+                    $failedNames += $item.FileName
+                    Write-Log "Failed to delete $($item.FileName): $($_.Exception.Message)" "WARN" "logs/triage-actions.log"
+                    Write-Host "⚠️  Could not delete $($item.FileName): $($_.Exception.Message)" -ForegroundColor Red
                 }
             }
-            
-            "A" {
-                # Archive
+
+            if ($deletedNames.Count -gt 0) {
+                Write-Host "🗑️  Deleted $($deletedNames.Count) items: $($deletedNames -join ', ')" -ForegroundColor Red
+            }
+            if ($failedNames.Count -gt 0) {
+                Write-Host "Check file permissions or run as administrator for: $($failedNames -join ', ')" -ForegroundColor Yellow
+            }
+        }
+
+        "A" {
+            $customReason = Get-TriagePromptValue -EnvironmentVariable "PINKY_ARCHIVE_REASON" -Prompt "Archive reason (press Enter to use default 'triaged_from_inbox')" -DefaultValue ""
+            $archiveReasonValue = if (![string]::IsNullOrWhiteSpace($customReason)) { $customReason.Trim() } else { "triaged_from_inbox" }
+
+            foreach ($item in $selectedItems) {
+                $sourcePath = $item.FullPath
                 $targetPath = Join-Path "$vaultRoot/$($Config.folders.archive)" $item.FileName
                 if ($WhatIf) {
                     Write-Host "Would archive: $($item.FileName) -> $targetPath" -ForegroundColor Yellow
+                    continue
                 }
-                else {
-                    # Update frontmatter
+
+                try {
+                    Ensure-TriageTargetDirectory -TargetPath $targetPath
                     $content = Get-Content $sourcePath -Raw
                     $updatedContent = $content -replace 'disposition:\s*.*', 'disposition: "archived"'
                     $updatedContent = $updatedContent -replace 'review_status:\s*.*', 'review_status: archived'
-                    
-                    # Add archive metadata
                     $archiveDate = Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fffZ"
                     $updatedContent = $updatedContent -replace '(---\s*\n)', "`$1archive_date: $archiveDate`narchive_reason: triaged_from_inbox`n"
-                    
+                    $updatedContent = $updatedContent.Replace("archive_reason: triaged_from_inbox", "archive_reason: $archiveReasonValue")
                     Set-Content -Path $targetPath -Value $updatedContent -Encoding UTF8
-                    Remove-Item $sourcePath -Force
+                    Remove-Item $sourcePath -Force -ErrorAction Stop
                     $changedFiles += $sourcePath
                     $changedFiles += $targetPath
-                    
                     Write-Log "Archived item: $($item.FileName)" "INFO" "logs/triage-actions.log"
                     Write-Host "📦 Archived: $($item.FileName)" -ForegroundColor Yellow
                 }
+                catch {
+                    Write-Log "Failed to archive $($item.FileName): $($_.Exception.Message)" "WARN" "logs/triage-actions.log"
+                    Write-Host "⚠️  Could not archive $($item.FileName): $($_.Exception.Message)" -ForegroundColor Red
+                }
             }
-            
-            "R" {
-                # Move to Raw
+        }
+
+        "R" {
+            foreach ($item in $selectedItems) {
+                $sourcePath = $item.FullPath
                 $targetPath = Join-Path "$vaultRoot/$($Config.folders.raw)" $item.FileName
                 if ($WhatIf) {
                     Write-Host "Would move to raw: $($item.FileName) -> $targetPath" -ForegroundColor Yellow
+                    continue
                 }
-                else {
+
+                try {
+                    Ensure-TriageTargetDirectory -TargetPath $targetPath
                     $content = Get-Content $sourcePath -Raw
                     $updatedContent = $content -replace 'disposition:\s*.*', 'disposition: "raw"'
-                    
                     Set-Content -Path $targetPath -Value $updatedContent -Encoding UTF8
-                    Remove-Item $sourcePath -Force
+                    Remove-Item $sourcePath -Force -ErrorAction Stop
                     $changedFiles += $sourcePath
                     $changedFiles += $targetPath
-                    
                     Write-Log "Moved to raw: $($item.FileName)" "INFO" "logs/triage-actions.log"
                     Write-Host "📄 Moved to raw: $($item.FileName)" -ForegroundColor Blue
                 }
+                catch {
+                    Write-Log "Failed to move $($item.FileName) to raw: $($_.Exception.Message)" "WARN" "logs/triage-actions.log"
+                    Write-Host "⚠️  Could not move $($item.FileName) to raw: $($_.Exception.Message)" -ForegroundColor Red
+                }
             }
-            
-            "W" {
-                # Move to Working
+        }
+
+        "W" {
+            foreach ($item in $selectedItems) {
+                $sourcePath = $item.FullPath
                 $targetPath = Join-Path "$vaultRoot/$($Config.folders.working)" $item.FileName
                 if ($WhatIf) {
                     Write-Host "Would move to working: $($item.FileName) -> $targetPath" -ForegroundColor Yellow
+                    continue
                 }
-                else {
+
+                try {
+                    Ensure-TriageTargetDirectory -TargetPath $targetPath
                     $content = Get-Content $sourcePath -Raw
                     $updatedContent = $content -replace 'disposition:\s*.*', 'disposition: "working"'
-                    
                     Set-Content -Path $targetPath -Value $updatedContent -Encoding UTF8
-                    Remove-Item $sourcePath -Force
+                    Remove-Item $sourcePath -Force -ErrorAction Stop
                     $changedFiles += $sourcePath
                     $changedFiles += $targetPath
-                    
                     Write-Log "Moved to working: $($item.FileName)" "INFO" "logs/triage-actions.log"
                     Write-Host "📝 Moved to working: $($item.FileName)" -ForegroundColor Green
                 }
+                catch {
+                    Write-Log "Failed to move $($item.FileName) to working: $($_.Exception.Message)" "WARN" "logs/triage-actions.log"
+                    Write-Host "⚠️  Could not move $($item.FileName) to working: $($_.Exception.Message)" -ForegroundColor Red
+                }
             }
-            
-            "C" {
-                # Wiki candidate (stays in inbox but marked)
+        }
+
+        "C" {
+            foreach ($item in $selectedItems) {
+                $sourcePath = $item.FullPath
                 if ($WhatIf) {
                     Write-Host "Would mark as wiki candidate: $($item.FileName)" -ForegroundColor Yellow
+                    continue
                 }
-                else {
-                    $content = Get-Content $sourcePath -Raw
-                    $updatedContent = $content -replace 'disposition:\s*.*', 'disposition: "wiki-candidate"'
-                    
-                    Set-Content -Path $sourcePath -Value $updatedContent -Encoding UTF8
-                    $changedFiles += $sourcePath
-                    
-                    Write-Log "Marked as wiki candidate: $($item.FileName)" "INFO" "logs/triage-actions.log"
-                    Write-Host "⭐ Marked as wiki candidate: $($item.FileName)" -ForegroundColor Magenta
-                }
+
+                $content = Get-Content $sourcePath -Raw
+                $updatedContent = $content -replace 'disposition:\s*.*', 'disposition: "wiki-candidate"'
+                Set-Content -Path $sourcePath -Value $updatedContent -Encoding UTF8
+                $changedFiles += $sourcePath
+                Write-Log "Marked as wiki candidate: $($item.FileName)" "INFO" "logs/triage-actions.log"
+                Write-Host "⭐ Marked as wiki candidate: $($item.FileName)" -ForegroundColor Magenta
             }
         }
     }
@@ -304,14 +404,12 @@ function Process-Disposition {
 try {
     # Load configuration
     $config = Get-Config -Project $Project
-    
-    # Validate directory structure
-    if (!(Test-DirectoryStructure $config)) {
-        Write-Log "Directory structure validation failed. Run setup-system.ps1 first." "ERROR"
+
+    $inboxPath = "$($config.system.vault_root)/$($config.folders.inbox)"
+    if (!(Test-Path $inboxPath)) {
+        Write-Log "Inbox folder not found at '$inboxPath'. Run .\scripts\setup-system.ps1 to initialize the system." "ERROR"
         exit 2
     }
-    
-    $inboxPath = "$($config.system.vault_root)/$($config.folders.inbox)"
     
     # Get inbox items with filters
     $items = Get-InboxItems -InboxPath $inboxPath -FilterSourceType $SourceType -FilterProject $Project -FilterOlderThan $OlderThan
@@ -343,7 +441,12 @@ try {
                 if (!$WhatIf) {
                     if (Get-Command 'Invoke-GitCommit' -ErrorAction SilentlyContinue) {
                         $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-                        $changedFiles = @($changedPaths | ForEach-Object { $_.Replace($repoRoot, '').TrimStart('/\').Replace('\', '/') } | Where-Object { $_ })
+                        $changedFiles = @($changedPaths | ForEach-Object {
+                            $resolvedPath = [System.IO.Path]::GetFullPath($_)
+                            if ($resolvedPath.StartsWith($repoRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                                $resolvedPath.Replace($repoRoot, '').TrimStart('/\').Replace('\', '/')
+                            }
+                        } | Where-Object { $_ })
                         $count = $selection.Items.Count
                         $dispMap = @{ D = "deleted"; A = "archived"; R = "moved to raw"; W = "moved to working"; C = "marked wiki-candidate" }
                         $dispDesc = if ($dispMap.ContainsKey($selection.Disposition)) { $dispMap[$selection.Disposition] } else { $selection.Disposition }
