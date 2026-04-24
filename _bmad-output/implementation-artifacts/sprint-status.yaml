@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-15T00:00:00.000Z
-last_updated: 2026-04-23T22:15:00.000Z
+last_updated: 2026-04-24T00:45:00.000Z
 project: PinkyAndTheBrain
 project_key: NOKEY
 tracking_system: file-system
@@ -43,7 +43,7 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   # Epic 0: System Foundation
-  epic-0: in-progress
+  epic-0: done
   0-1-initial-system-setup-and-folder-structure: done
   0-2-template-system-creation: done
   0-3-powershell-script-implementation: done
@@ -52,14 +52,14 @@ development_status:
   epic-0-retrospective: optional
   
   # Epic 1: Basic Knowledge Lifecycle
-  epic-1: in-progress
+  epic-1: done
   1-1-quick-knowledge-capture: done
   1-2-inbox-triage-workflow: done
   1-3-working-note-creation-and-management: done
   epic-1-retrospective: optional
   
   # Epic 2: Knowledge Quality & Promotion
-  epic-2: in-progress
+  epic-2: done
   2-1-wiki-promotion-workflow: done
   2-2-wiki-metadata-management: done
   2-3-content-archival-system: done
@@ -73,8 +73,8 @@ development_status:
   epic-3-retrospective: optional
   
   # Epic 4: Advanced Capture & Sources
-  epic-4: backlog
-  4-1-ai-conversation-import: backlog
+  epic-4: in-progress
+  4-1-ai-conversation-import: done
   4-2-non-ai-source-capture: backlog
   4-3-capture-configuration-management: backlog
   epic-4-retrospective: optional
