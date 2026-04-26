@@ -56,5 +56,19 @@ privacy:
   private_excluded_from_handoffs: true
   do_not_promote_blocks_wiki: true
 
+source_types:
+  web:
+    template: "templates/source-web.md"
+  book:
+    template: "templates/source-book.md"
+  meeting:
+    template: "templates/source-meeting.md"
+  video:
+    template: "templates/source-video.md"
+  article:
+    template: "templates/source-article.md"
+  idea:
+    template: "templates/source-idea.md"
+
 limits:
   max_content_size: 10485760

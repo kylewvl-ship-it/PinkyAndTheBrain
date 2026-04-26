@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-15T00:00:00.000Z
-last_updated: 2026-04-26T00:00:00.000Z
+last_updated: 2026-04-26T16:15:00.000Z
 project: PinkyAndTheBrain
 project_key: NOKEY
 tracking_system: file-system
@@ -73,10 +73,10 @@ development_status:
   epic-3-retrospective: optional
   
   # Epic 4: Advanced Capture & Sources
-  epic-4: in-progress
+  epic-4: done
   4-1-ai-conversation-import: done
   4-2-non-ai-source-capture: done
-  4-3-capture-configuration-management: backlog
+  4-3-capture-configuration-management: done
   epic-4-retrospective: optional
   
   # Epic 5: Privacy & Project Management

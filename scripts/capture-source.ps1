@@ -2,7 +2,6 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('web','book','meeting','video','article','idea')]
     [string]$SourceType,
 
     [string]$Title = "",
@@ -72,6 +71,35 @@ function ConvertTo-TemplateValueMap {
     return $values
 }
 
+function Get-ConfiguredSourceTypes {
+    param([hashtable]$Config)
+
+    $configuredTypes = @('web','book','meeting','video','article','idea')
+    if ($Config.ContainsKey('source_types') -and $Config.source_types -is [hashtable]) {
+        $configuredTypes = @($Config.source_types.Keys | Sort-Object)
+    }
+
+    return $configuredTypes
+}
+
+function Get-ConfiguredTemplatePath {
+    param(
+        [hashtable]$Config,
+        [string]$SourceType
+    )
+
+    if ($Config.ContainsKey('source_types') -and $Config.source_types -is [hashtable]) {
+        if ($Config.source_types.ContainsKey($SourceType)) {
+            $entry = $Config.source_types[$SourceType]
+            if ($entry -is [hashtable] -and $entry.ContainsKey('template') -and -not [string]::IsNullOrWhiteSpace([string]$entry.template)) {
+                return [string]$entry.template
+            }
+        }
+    }
+
+    return ""
+}
+
 function Expand-SourceTemplate {
     param(
         [string]$TemplateContent,
@@ -127,8 +155,12 @@ function New-OfflineSourceDocument {
         [hashtable]$Values
     )
 
-    $templateRoot = [string]$Config.system.template_root
-    $templatePath = Join-Path $templateRoot ("source-{0}.md" -f $SourceType.ToLowerInvariant())
+    $templatePath = Get-ConfiguredTemplatePath -Config $Config -SourceType $SourceType
+    if ([string]::IsNullOrWhiteSpace($templatePath)) {
+        $templateRoot = [string]$Config.system.template_root
+        $templatePath = Join-Path $templateRoot ("source-{0}.md" -f $SourceType.ToLowerInvariant())
+    }
+
     if (Test-Path $templatePath) {
         $templateContent = Get-Content -Path $templatePath -Raw -Encoding UTF8
         return Expand-SourceTemplate -TemplateContent $templateContent -Values $Values
@@ -188,6 +220,12 @@ if ($Help) {
 
 try {
     $config = Get-Config
+    $configuredTypes = Get-ConfiguredSourceTypes -Config $config
+    if ($configuredTypes -notcontains $SourceType) {
+        Write-Log "Invalid SourceType '$SourceType'. Valid types: $($configuredTypes -join ',')" "ERROR"
+        exit 1
+    }
+
     $inboxFolder = [System.IO.Path]::GetFullPath((Join-Path $config.system.vault_root $config.folders.inbox))
     if (!(Test-Path $inboxFolder)) {
         Write-Log "Inbox folder not found at '$inboxFolder'. Run .\scripts\setup-system.ps1 to initialize." "ERROR"

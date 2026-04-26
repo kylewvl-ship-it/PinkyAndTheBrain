@@ -110,6 +110,29 @@ if ($parsed) {
     if ($pathErrors.Count -eq 0) {
         Write-Host "✓ All configured paths exist" -ForegroundColor Green
     }
+
+    if ($config.ContainsKey('source_types') -and $config.source_types -is [hashtable]) {
+        $typeCount = $config.source_types.Count
+        Write-Host "✓ source_types section present ($typeCount type(s) configured)" -ForegroundColor Green
+
+        foreach ($typeName in $config.source_types.Keys) {
+            $typeEntry = $config.source_types[$typeName]
+            if ($typeEntry -isnot [hashtable] -or !$typeEntry.ContainsKey('template')) {
+                $allErrors += "source_types.${typeName}: missing required 'template' key"
+                Write-Host "✗ source_types.${typeName}: missing 'template' key" -ForegroundColor Red
+            }
+            elseif (!(Test-Path $typeEntry['template'])) {
+                $warnings += "source_types.${typeName}: template file not found: $($typeEntry['template'])"
+                Write-Host "⚠ source_types.${typeName}: template not found: $($typeEntry['template'])" -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "✓ source_types.${typeName}: template exists" -ForegroundColor Green
+            }
+        }
+    }
+    else {
+        Write-Host "⚠ source_types section absent — capture-source.ps1 will use built-in defaults" -ForegroundColor Yellow
+    }
 }
 
 # Summary
