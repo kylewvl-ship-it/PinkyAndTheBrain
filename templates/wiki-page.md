@@ -13,6 +13,7 @@ domain: ""
 private: false
 do_not_promote: false
 exclude_from_ai: false
+redacted_sections: []
 ---
 
 # <title>
@@ -45,4 +46,3 @@ Known uncertainty or competing interpretations.
 
 - Primary:
 - Secondary:
-

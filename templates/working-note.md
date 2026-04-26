@@ -9,6 +9,8 @@ domain: ""
 source_list: []
 promoted_to: ""
 private: false
+exclude_from_ai: false
+redacted_sections: []
 do_not_promote: false
 ---
 
@@ -45,4 +47,3 @@ What does not fit yet.
 ## Source Pointers
 
 - raw/<file>
-

@@ -150,6 +150,25 @@ function Get-FrontmatterValues {
     return @($trimmed.Trim('"').Trim("'"))
 }
 
+function Get-RedactedContent {
+    param(
+        [string]$Content,
+        [string[]]$Sections
+    )
+
+    $updatedContent = $Content
+    foreach ($sectionName in $Sections) {
+        if ([string]::IsNullOrWhiteSpace($sectionName)) {
+            continue
+        }
+
+        $pattern = "(?m)(^## $([regex]::Escape($sectionName))\s*$\r?\n)([\s\S]*?)(?=^## |\z)"
+        $updatedContent = [regex]::Replace($updatedContent, $pattern, "`$1[REDACTED]`r`n`r`n")
+    }
+
+    return $updatedContent
+}
+
 function Get-HandoffCandidates {
     param(
         [string]$Topic,
@@ -181,6 +200,7 @@ function Get-HandoffCandidates {
             $firstParagraph = Get-FirstParagraph -Body $body
             $privateValues = @(Get-FrontmatterValues -Frontmatter $frontmatter -Key 'private')
             $excludeValues = @(Get-FrontmatterValues -Frontmatter $frontmatter -Key 'exclude_from_ai')
+            $redactedSections = @(Get-FrontmatterValues -Frontmatter $frontmatter -Key 'redacted_sections')
             $projectValues = @(Get-FrontmatterValues -Frontmatter $frontmatter -Key 'project')
 
             $isPrivate = @($privateValues | Where-Object { $_.Equals('true', [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
@@ -188,6 +208,10 @@ function Get-HandoffCandidates {
             if ($isPrivate -or $excludeFromAi) {
                 $excludedPrivate++
                 continue
+            }
+
+            if ($redactedSections.Count -gt 0) {
+                $body = Get-RedactedContent -Content $body -Sections $redactedSections
             }
 
             if (-not [string]::IsNullOrWhiteSpace($Project)) {

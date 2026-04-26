@@ -8,6 +8,8 @@ review_status: "pending"
 disposition: "inbox"
 project: "{{project_name_optional}}"
 private: false
+exclude_from_ai: false
+redacted_sections: []
 do_not_promote: false
 ---
 
@@ -22,4 +24,3 @@ do_not_promote: false
 ## Next Actions
 
 - [ ] Review and assign disposition.
-

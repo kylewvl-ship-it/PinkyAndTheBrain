@@ -300,6 +300,7 @@ function Search-Files {
                     archive_reason = Get-FrontmatterValue -Frontmatter $frontmatter -Key 'archive_reason'
                     owner = Get-FrontmatterValue -Frontmatter $frontmatter -Key 'owner'
                     project = Get-FrontmatterValue -Frontmatter $frontmatter -Key 'project'
+                    private = Get-FrontmatterValue -Frontmatter $frontmatter -Key 'private'
                 }
 
                 if ($Project -and $frontmatterValues.project -ne $Project) {
@@ -331,6 +332,7 @@ function Search-Files {
                     ArchivedDate = $frontmatterValues.archived_date
                     ArchiveReason = $frontmatterValues.archive_reason
                     Owner = $frontmatterValues.owner
+                    IsPrivate = ($frontmatterValues.private -eq 'true')
                 }
             }
             catch {
@@ -398,13 +400,22 @@ function Show-SearchResults {
 
     for ($i = 0; $i -lt $Results.Count; $i++) {
         $result = $Results[$i]
+        $privacyTag = ""
+        if ($result.IsPrivate) {
+            $privacyTag = " [PRIVATE]"
+        }
         Write-Host "$($i + 1). " -NoNewline -ForegroundColor White
         Write-Host "[$($result.Layer)]" -NoNewline -ForegroundColor (Get-LayerColor -Layer $result.Layer)
-        Write-Host " $($result.Title)" -ForegroundColor White
+        Write-Host " $($result.Title)$privacyTag" -ForegroundColor White
         Write-Host "   File: $($result.FileName) | Last modified: $($result.LastModified.ToString('yyyy-MM-dd HH:mm')) | Match: $($result.MatchType)" -ForegroundColor Gray
         Show-LayerSpecificMetadata -Result $result
-        foreach ($line in $result.PreviewLines) {
-            Write-Host "   $line" -ForegroundColor DarkGray
+        if ($result.IsPrivate) {
+            Write-Host "   (preview suppressed for private file)" -ForegroundColor DarkGray
+        }
+        else {
+            foreach ($line in $result.PreviewLines) {
+                Write-Host "   $line" -ForegroundColor DarkGray
+            }
         }
         Write-Host ""
     }
