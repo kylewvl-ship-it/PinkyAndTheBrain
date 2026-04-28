@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-15T00:00:00.000Z
-last_updated: 2026-04-28T12:00:00.000Z
+last_updated: 2026-04-28T13:00:00.000Z
 project: PinkyAndTheBrain
 project_key: NOKEY
 tracking_system: file-system
@@ -84,7 +84,7 @@ development_status:
   5-1-sensitive-content-controls: done
   5-2-project-and-domain-separation: done
   5-3-vault-import-preview-and-analysis: done
-  5-4-vault-import-execution: backlog
+  5-4-vault-import-execution: done
   5-5-import-rollback-and-recovery: backlog
   epic-5-retrospective: optional
 

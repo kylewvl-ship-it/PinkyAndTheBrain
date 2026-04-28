@@ -40,21 +40,12 @@ if ($resultDir -and -not (Test-Path -LiteralPath $resultDir)) {
     New-Item -ItemType Directory -Path $resultDir | Out-Null
 }
 
-if ($Review) {
-    $codexArgs = @(
-        "review",
-        "--uncommitted",
-        "-"
-    )
-}
-else {
-    $codexArgs = @(
-        "exec",
-        "--full-auto",
-        "--output-last-message", $ResultText,
-        "-"
-    )
-}
+$codexArgs = @(
+    "exec",
+    "--full-auto",
+    "--output-last-message", $ResultText,
+    "-"
+)
 
 if ($DryRun) {
     Write-Host "Repo: $repoRoot"
@@ -65,16 +56,13 @@ if ($DryRun) {
     return
 }
 
-$output = $prompt | & $CodexCommand @codexArgs 2>&1
+$output = $prompt | & $CodexCommand @codexArgs
 $exitCode = $LASTEXITCODE
 $raw = ($output | Out-String).Trim()
 
 Set-Content -LiteralPath $ResultRaw -Value $raw -Encoding UTF8
 
-if ($Review) {
-    Set-Content -LiteralPath $ResultText -Value $raw -Encoding UTF8
-}
-elseif (-not (Test-Path -LiteralPath $ResultText)) {
+if (-not (Test-Path -LiteralPath $ResultText)) {
     Set-Content -LiteralPath $ResultText -Value $raw -Encoding UTF8
 }
 
