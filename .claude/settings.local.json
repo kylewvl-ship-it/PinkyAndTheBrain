@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.\\\\\\\\scripts\\\\\\\\invoke-codex-handoff.cmd)",
+      "Bash(./scripts/invoke-codex-handoff.cmd)",
+      "Bash(./scripts/invoke-codex-handoff.cmd -Review)",
+      "Bash(grep -n \"high\\\\|medium\\\\|low\\\\|Finding\\\\|findings\\\\|Severity\\\\|HIGH\\\\|MEDIUM\" \"C:\\\\\\\\Users\\\\\\\\kylew\\\\\\\\.claude\\\\\\\\projects\\\\\\\\c--Users-kylew-OneDrive-Desktop-ohyeah-PinkyAndTheBrain\\\\\\\\becfb48f-0dc1-4c22-a781-052f09a38e8c\\\\\\\\tool-results\\\\\\\\bnep8cboa.txt\")",
+      "Bash(git add *)"
+    ]
+  }
+}

@@ -1,38 +1,65 @@
-# Codex Task: Implement Story 5.3 — Vault Import Preview and Analysis
+# Codex Handoff — Code Review (Re-review after fix cycle 1)
 
-## Task Type
-BMAD Dev Story
+**Story ID:** 5.5
+**Story Key:** 5-5-import-rollback-and-recovery
+**Task Type:** code-review-recheck
+**Handoff Started:** 2026-04-29T00:00:00Z
 
-## Story File
-`_bmad-output/implementation-artifacts/5-3-vault-import-preview-and-analysis.md`
+## Context
 
-## Scope
-Implement story 5.3 only. Do not implement any future stories (5.4, 5.5, etc.).
+First review returned 3 findings (R1 HIGH, R2 MEDIUM, R3 MEDIUM). All three have been addressed:
 
-## What to implement
+**R1 (HIGH)** — completed-with-errors path wrote the import log `rollback` field, permanently blocking retry via idempotency guard.
+Fix: the `rollback` field is now written to the import log only when `$totals.errors -eq 0`. A `completed-with-errors` run leaves the field absent so the user can retry.
+Location: `scripts/rollback-import.ps1` around the block that was lines 507-511.
 
-Run the BMAD Dev Story workflow for story 5.3 using the story file above as your specification.
+**R2 (MEDIUM)** — confirmation-gate test did not assert file survival after aborted or `-Force`-only runs.
+Fix: added `Test-Path $target | Should Be $true` immediately after the no-confirm run and immediately after the `-Force`-only run.
+Location: `tests/rollback-import.Tests.ps1`, the "enforces the confirmation gate" test.
 
-Key deliverables:
-1. `scripts/import-preview.ps1` — non-destructive vault preview script
-2. `tests/import-preview.Tests.ps1` — focused Pester tests
+**R3 (MEDIUM)** — hard-coded `2026-04-28` timestamps would fail after 7-day recency window moved.
+Fix: added `$script:RecentImportId`, `$script:RecentImportDate`, `$script:OldImportId`, `$script:OldImportDate` computed at module load time relative to `(Get-Date).ToUniversalTime()`. All test call sites updated to use these variables. The recency-gate test now uses `$script:OldImportId` and `$script:OldImportDate` for the over-7-days case. Timestamp-modified tests now set `LastWriteTimeUtc` to `$script:NowUtc` instead of a fixed date.
+Location: `tests/rollback-import.Tests.ps1`, top of file and all `Invoke-RollbackScript` call sites.
 
-Follow all Dev Notes, existing patterns, and scope boundaries in the story file exactly.
+## Validation after fixes
+
+Both suites pass:
+- `Invoke-Pester tests\rollback-import.Tests.ps1`: 11/11 passed, 0 failed
+- `Invoke-Pester tests\execute-import.Tests.ps1`: 18/18 passed, 0 failed (no regression)
+
+## Task
+
+Re-read the two files and confirm all three findings are correctly resolved. Look for any new issues introduced by the fixes. Pay close attention to:
+- R1 fix: does the `completed-with-errors` path correctly leave the import log untouched so re-running is possible? Is there any edge case where errors cause a partial rollback that would leave orphaned state?
+- R2 fix: do the new `Test-Path $target | Should Be $true` assertions appear in the right place (before the confirmed run)?
+- R3 fix: are there any remaining hard-coded timestamps that would expire? Do the old-import and recent-import test scenarios still test the correct behavior?
+
+## Files to review
+
+- `scripts/rollback-import.ps1`
+- `tests/rollback-import.Tests.ps1`
 
 ## Validation
-- Run `Invoke-Pester tests\import-preview.Tests.ps1` and report results
-- If shared helpers were modified, also run affected tests for frontmatter, config-loader, import-conversation, search
-- Do not run the full suite; if you do, report unrelated pre-existing failures separately
 
-## Stop conditions
-Stop and report if:
-- A real blocker or user decision is required
-- Any test exposes a blocking unrelated failure
-- Implementation would require changing scope or acceptance criteria
+Run:
+- `Invoke-Pester tests\rollback-import.Tests.ps1`
+- `Invoke-Pester tests\execute-import.Tests.ps1`
 
 ## Report back
-When done, report:
-- Files changed (list)
-- Validation run and results (pass/fail counts)
-- Status (complete / blocked)
-- Any blockers with details
+
+Embed full findings inline in your final message. Format:
+
+```
+story_id: 5.5
+task_type: code-review-recheck
+status: approved | findings
+validation_run:
+  - <command>: <pass>/<fail>
+findings:
+  - id: <Rx>
+    severity: HIGH | MEDIUM | LOW
+    ...
+summary: <one paragraph>
+```
+
+If all findings resolved and no new issues: `findings: none` and `status: approved`.
