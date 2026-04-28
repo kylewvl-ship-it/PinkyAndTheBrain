@@ -1,11 +1,15 @@
-﻿**Story file created. Report:**
+﻿---
 
-- **Story file**: `_bmad-output/implementation-artifacts/1-2-inbox-triage-workflow.md`
-- **Status**: `ready-for-dev`
-- **Files changed**:
-  - `_bmad-output/implementation-artifacts/1-2-inbox-triage-workflow.md` — created
-  - `_bmad-output/implementation-artifacts/sprint-status.yaml` — `1-2-inbox-triage-workflow` updated from `backlog` → `ready-for-dev`, `last_updated` refreshed
-- **Validation**: Story checked against checklist criteria — all sections present (user story, ACs with BDD scenarios, technical requirements, delta specification, architecture constraints, testing requirements, previous story intelligence, definition of done, tasks, file list)
-- **Blockers**: None
+**Story file path:** `_bmad-output/implementation-artifacts/5-2-project-and-domain-separation.md`
 
-Key delta captured for the dev agent: `triage.ps1` from Epic 0 is the base (do not rewrite). Six surgical changes required — filename display, delete confirmation+summary+per-file error handling, custom archive reason, `all` command, auto-create missing target folders, and per-item try/catch on moves.
+**Status:** `ready-for-dev` (sprint-status.yaml already updated)
+
+**Files changed:** Story file updated in place (was untracked); sprint-status was already correct.
+
+**Validation applied:**
+- Fixed confusing dead-code line in generate-handoff.ps1 Change 2 (`$isShared` variable renamed to `$isSharedForDomain` to avoid shadowing)
+- Fixed fragile untagged-count logic in list-projects.ps1 (now tracks per-file boolean rather than subtracting from inflated sum)
+- Added missing regression test cases for search.ps1 domain/array-project filtering and generate-handoff.ps1 domain + `shared: true` bypass
+- Added explicit note to update `Search-Files` function signature and call site for `-Domain` param
+
+**Blockers:** None.

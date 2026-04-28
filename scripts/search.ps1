@@ -5,6 +5,7 @@ param(
     [string]$Layers = "",
     [int]$MaxResults = 0,
     [string]$Project = "",
+    [string]$Domain = "",
     [switch]$Wiki,
     [switch]$Working,
     [switch]$Raw,
@@ -28,6 +29,19 @@ if (!(Test-Path "$PSScriptRoot/lib/common.ps1")) {
 . "$PSScriptRoot/lib/common.ps1"
 . "$PSScriptRoot/lib/config-loader.ps1"
 . "$PSScriptRoot/lib/frontmatter.ps1"
+
+function Get-FrontmatterValuesLocal {
+    param([string]$Frontmatter, [string]$Key)
+    $value = Get-FrontmatterValue -Frontmatter $Frontmatter -Key $Key
+    if ([string]::IsNullOrWhiteSpace($value)) { return @() }
+    $trimmed = $value.Trim()
+    if ($trimmed.StartsWith('[') -and $trimmed.EndsWith(']')) {
+        return @(($trimmed.Trim('[', ']') -split ',') |
+            ForEach-Object { $_.Trim().Trim('"').Trim("'") } |
+            Where-Object { $_ -ne '' })
+    }
+    return @($trimmed.Trim('"').Trim("'"))
+}
 
 function Get-RepoRoot {
     $envRepoRoot = [Environment]::GetEnvironmentVariable('PINKY_GIT_REPO_ROOT')
@@ -270,6 +284,7 @@ function Search-Files {
         [hashtable]$Layers,
         [string]$Query,
         [string]$Project,
+        [string]$Domain,
         [switch]$CaseSensitive,
         [int]$MaxResults
     )
@@ -303,8 +318,26 @@ function Search-Files {
                     private = Get-FrontmatterValue -Frontmatter $frontmatter -Key 'private'
                 }
 
-                if ($Project -and $frontmatterValues.project -ne $Project) {
-                    continue
+                if (-not [string]::IsNullOrWhiteSpace($Project)) {
+                    $projValues = Get-FrontmatterValuesLocal -Frontmatter $frontmatter -Key 'project'
+                    $isShared = (Get-FrontmatterValue -Frontmatter $frontmatter -Key 'shared') -eq 'true'
+                    if (-not $isShared) {
+                        $matchesProj = @($projValues | Where-Object {
+                            $_.Equals($Project, [System.StringComparison]::OrdinalIgnoreCase)
+                        }).Count -gt 0
+                        if (-not $matchesProj) { continue }
+                    }
+                }
+
+                if (-not [string]::IsNullOrWhiteSpace($Domain)) {
+                    $domainValues = Get-FrontmatterValuesLocal -Frontmatter $frontmatter -Key 'domain'
+                    $isShared = (Get-FrontmatterValue -Frontmatter $frontmatter -Key 'shared') -eq 'true'
+                    if (-not $isShared) {
+                        $matchesDomain = @($domainValues | Where-Object {
+                            $_.Equals($Domain, [System.StringComparison]::OrdinalIgnoreCase)
+                        }).Count -gt 0
+                        if (-not $matchesDomain) { continue }
+                    }
                 }
 
                 $title = if ($frontmatterValues.title) { $frontmatterValues.title } else { [System.IO.Path]::GetFileNameWithoutExtension($file.Name) }
@@ -884,7 +917,7 @@ try {
     }
 
     Write-Host "Searching layers: $($selectedLayers.Keys -join ', ')" -ForegroundColor Cyan
-    $results = @(Search-Files -Layers $selectedLayers -Query $Query -Project $Project -CaseSensitive:$CaseSensitive -MaxResults $MaxResults)
+    $results = @(Search-Files -Layers $selectedLayers -Query $Query -Project $Project -Domain $Domain -CaseSensitive:$CaseSensitive -MaxResults $MaxResults)
     Show-SearchResults -Results $results -Query $Query -MaxResults $MaxResults
 
     if ($Diagnose) {

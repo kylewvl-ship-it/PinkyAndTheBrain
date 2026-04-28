@@ -80,7 +80,7 @@ A successful MVP should show that Obsidian-compatible knowledge management, AI c
 
 ### Technical Success
 
-The MVP should support automatic AI conversation capture inspired by `claude-memory-compiler`, then convert captured sessions into structured knowledge that can be promoted, searched, and checked. The system does not need to remain Markdown-only, but Markdown and Obsidian compatibility remain important constraints because the knowledge base must stay local-first, inspectable, and easy to edit.
+The MVP should support AI conversation capture and conversion into structured knowledge that can be promoted, searched, and checked. Canonical knowledge artifacts remain Markdown-first and Obsidian-compatible. The system may introduce derived metadata caches, dedup fingerprints, retrieval indexes, or optional agent-facing adapters after the manual workflow proves itself, but those derived artifacts must be rebuildable from canonical Markdown and may not bypass review gates or become a higher-authority source of truth.
 
 Technical success requires the system to check itself. It should detect stale information, outdated claims, missing provenance, duplicate concepts, orphaned pages, broken links, and contradictions where possible. Health checks should protect the knowledge base from silently decaying.
 
@@ -114,7 +114,7 @@ AI conversation capture should be phased. The first MVP milestone may support ma
 
 ### Growth Features (Post-MVP)
 
-Post-MVP growth features may include deeper Obsidian integration, richer retrieval interfaces, automated deduplication suggestions, contradiction detection across related pages, configurable review schedules, multi-agent review workflows, and dashboards for knowledge health.
+Post-MVP growth features may include deeper Obsidian integration, recipe-based source imports, structured metadata extraction, content fingerprint deduplication, richer retrieval interfaces that combine text and metadata search, optional semantic ranking adapters, optional MCP-based agent access derived from canonical knowledge files, configurable review schedules, multi-agent review workflows, and dashboards for knowledge health.
 
 ### Vision (Future)
 
@@ -437,12 +437,13 @@ The system should avoid requiring an Obsidian plugin for the MVP. Integration sh
 
 The MVP API surface should be workflow- and command-oriented rather than library-first. Candidate commands or script entry points should cover:
 
-- Capture or import AI conversation logs.
-- Create or update raw capture entries.
+- Capture or import AI conversation logs through recipe-driven handlers where useful.
+- Create or update raw capture entries and reviewable extraction outputs.
 - Promote reviewed knowledge into wiki-ready Markdown.
-- Run health checks for metadata, broken links, stale review dates, duplicates, unsupported claims, and orphaned pages.
-- Search or retrieve relevant knowledge for an agent handoff.
-- Generate or refresh indexes used for retrieval and navigation.
+- Run health checks for metadata, broken links, stale review dates, duplicates, unsupported claims, orphaned pages, extraction confidence gaps, and derived-index drift.
+- Search or retrieve relevant knowledge for an agent handoff using text and metadata-aware retrieval.
+- Generate, refresh, and rebuild derived indexes used for retrieval and navigation without changing canonical Markdown authority.
+- Optionally expose curated retrieval through an agent-facing adapter only after the canonical-vs-derived boundary is enforced.
 
 ### Migration Requirements
 

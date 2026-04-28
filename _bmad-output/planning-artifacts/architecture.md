@@ -159,9 +159,12 @@ scripts/
 
 **Multi-Source Ingestion:**
 - **Manual capture**: Templates and folder drops for immediate capture
+- **Recipe-based ingestion**: Source-specific handlers normalize imports into raw/staging formats
+- **Structured extraction**: Optional metadata extraction, fingerprint generation, and duplicate analysis create reviewable derived artifacts
 - **Agent hooks**: BMad agents write structured outputs to staging areas
 - **Batch processing**: Scheduled processing of accumulated inputs
 - **Review gates**: Human approval required before wiki promotion (NFR-003)
+- **Authority rule**: extraction outputs and indexes are derived artifacts, rebuildable from canonical Markdown, and never outrank accepted knowledge files
 
 **Processing Pipeline (Karpathy-Aligned):**
 - **Ingest**: Sources processed into raw layer with metadata
@@ -175,7 +178,9 @@ scripts/
 - **File-based contracts**: Agents read/write specific file formats in `.ai/handoffs/`
 - **obsidian-cli integration**: Standardized vault operations for link updates, file moves
 - **Context injection**: Agents receive relevant wiki content via file-based handoff
+- **Derived retrieval adapters**: optional machine-facing retrieval surfaces may be added for curated access to canonical knowledge
 - **Output capture**: Agent conversations structured into reviewable formats
+- **Authority rule**: any MCP or adapter surface is read-only or review-gated against canonical Markdown artifacts and cannot become the primary write path
 
 **Integration Patterns:**
 - **Staging workflow**: Agents write to staging, human approves promotion
@@ -208,10 +213,12 @@ scripts/
 ### Infrastructure & Deployment Architecture
 
 **Local-First Operations:**
-- **Storage**: Git repository of Markdown files with version history
+- **Storage**: Git repository of canonical Markdown files with version history
+- **Derived artifacts**: rebuildable metadata caches, fingerprints, and retrieval indexes stored separately from canonical knowledge files
 - **Backup**: Automated git commits + external backup sync
 - **Sync**: Git-based synchronization across devices
-- **Performance**: Index-based navigation (index.md) + optional search tools
+- **Performance**: Index-based navigation (index.md), metadata-aware retrieval, and optional derived search adapters
+- **Recovery rule**: derived artifacts can be deleted and rebuilt without loss of canonical knowledge
 
 **Maintenance Workflows:**
 - **Daily routine**: Health check + inbox triage (15 min total per NFR-012)

@@ -3,6 +3,7 @@
 param(
     [string]$Topic = "",
     [string]$Project = "",
+    [string]$Domain = "",
     [switch]$Help
 )
 
@@ -173,6 +174,7 @@ function Get-HandoffCandidates {
     param(
         [string]$Topic,
         [string]$Project,
+        [string]$Domain,
         [hashtable]$Config
     )
 
@@ -215,13 +217,29 @@ function Get-HandoffCandidates {
             }
 
             if (-not [string]::IsNullOrWhiteSpace($Project)) {
-                if ($projectValues.Count -eq 0) {
-                    continue
-                }
+                $isShared = (Get-FrontmatterValue -Frontmatter $frontmatter -Key 'shared') -eq 'true'
+                if (-not $isShared) {
+                    if ($projectValues.Count -eq 0) {
+                        continue
+                    }
 
-                $matchesProject = @($projectValues | Where-Object { $_.Equals($Project, [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0
-                if (-not $matchesProject) {
-                    continue
+                    $matchesProject = @($projectValues | Where-Object {
+                        $_.Equals($Project, [System.StringComparison]::OrdinalIgnoreCase)
+                    }).Count -gt 0
+                    if (-not $matchesProject) {
+                        continue
+                    }
+                }
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($Domain)) {
+                $domainValues = @(Get-FrontmatterValues -Frontmatter $frontmatter -Key 'domain')
+                $isSharedForDomain = (Get-FrontmatterValue -Frontmatter $frontmatter -Key 'shared') -eq 'true'
+                if (-not $isSharedForDomain) {
+                    $matchesDomain = @($domainValues | Where-Object {
+                        $_.Equals($Domain, [System.StringComparison]::OrdinalIgnoreCase)
+                    }).Count -gt 0
+                    if (-not $matchesDomain) { continue }
                 }
             }
 
@@ -412,6 +430,7 @@ function Write-HandoffFile {
         [object[]]$IncludedItems,
         [string]$Topic,
         [string]$Project,
+        [string]$Domain,
         [hashtable]$Config,
         [int]$TotalTokens,
         [int]$ExcludedByBudget,
@@ -440,6 +459,7 @@ function Write-HandoffFile {
         "**Generated:** $generatedLabel"
         "**Topic:** $Topic"
         "**Project scope:** $(if ([string]::IsNullOrWhiteSpace($Project)) { 'all' } else { $Project })"
+        "**Domain scope:** $(if ([string]::IsNullOrWhiteSpace($Domain)) { 'all' } else { $Domain })"
         "**Token budget used:** $TotalTokens / $maxContextTokens"
     )
 
@@ -508,9 +528,9 @@ if ([string]::IsNullOrWhiteSpace($Topic)) {
 
 try {
     $config = Get-Config
-    $discovery = Get-HandoffCandidates -Topic $Topic -Project $Project -Config $config
+    $discovery = Get-HandoffCandidates -Topic $Topic -Project $Project -Domain $Domain -Config $config
     $assembly = Invoke-ContentAssembly -Candidates $discovery.Candidates -Config $config -Topic $Topic -ExcludedPrivateCount $discovery.ExcludedPrivateCount
-    $path = Write-HandoffFile -IncludedItems $assembly.IncludedItems -Topic $Topic -Project $Project -Config $config -TotalTokens $assembly.TotalTokens -ExcludedByBudget $assembly.ExcludedByBudget -ExcludedPrivateCount $assembly.ExcludedPrivateCount
+    $path = Write-HandoffFile -IncludedItems $assembly.IncludedItems -Topic $Topic -Project $Project -Domain $Domain -Config $config -TotalTokens $assembly.TotalTokens -ExcludedByBudget $assembly.ExcludedByBudget -ExcludedPrivateCount $assembly.ExcludedPrivateCount
     exit 0
 }
 catch {

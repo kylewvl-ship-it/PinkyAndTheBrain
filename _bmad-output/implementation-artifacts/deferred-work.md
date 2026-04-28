@@ -1,5 +1,13 @@
 # Deferred Work Items
 
+## Deferred from: code review of 5-3-vault-import-preview-and-analysis (2026-04-28)
+
+- Levenshtein O(N×M) DoS risk on large vaults — performance hardening to address alongside Story 5.4 import execution
+- BOM/CRLF source files may bypass frontmatter parsing in PS7 — project-wide concern with shared `lib/frontmatter.ps1` parser
+- `MakeRelativeUri` returns absolute URI for cross-volume/symlinked vaults — rare in practice, only affects exotic vault layouts
+- `Get-CleanFilenameStem` only normalizes two date-prefix shapes — reduces duplicate-detection accuracy for Obsidian default daily-note formats
+- Concurrent runs collide on identical `yyyyMMdd-HHmmss` timestamp — repo-wide convention shared with `import-conversation.ps1`
+
 ## Deferred from: code review of 0-3-powershell-script-implementation (2026-04-17)
 
 - Search result format styling — cosmetic difference from AC format, low priority visual enhancement

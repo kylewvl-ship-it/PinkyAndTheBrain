@@ -7,6 +7,7 @@ source_title: "{{source_title}}"
 review_status: "pending"
 disposition: "inbox"
 project: "{{project_name_optional}}"
+domain: ""
 private: false
 exclude_from_ai: false
 redacted_sections: []

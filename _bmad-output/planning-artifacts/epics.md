@@ -963,10 +963,11 @@ So that I can find relevant knowledge regardless of where it's stored.
 
 **Given** I perform a text search query
 **When** the search is executed
-**Then** results are returned from all knowledge layers using file content and metadata matching
-**And** results are ranked by: exact title match > exact content match > partial content match > metadata match
-**And** each result shows: filename, knowledge layer, last modified date, and 2-line preview
+**Then** results are returned from all knowledge layers using text search plus metadata-aware filtering
+**And** results are ranked by: exact title match > curated metadata match > exact content match > partial content match
+**And** each result shows: filename, knowledge layer, last modified date, provenance/source pointer, confidence indicator when available, and 2-line preview
 **And** maximum 20 results are returned to avoid overwhelming output
+**And** the search workflow can optionally consume a rebuildable derived index without making that index authoritative
 
 **Given** search results include content from different knowledge layers
 **When** results are displayed
@@ -1029,8 +1030,8 @@ So that agents receive relevant background within token limits.
 
 **Given** I request context generation for a specific topic or task
 **When** I provide keywords or task description
-**Then** the system searches for relevant wiki pages and working notes using keyword matching
-**And** it prioritizes wiki content over working notes over raw content
+**Then** the system searches for relevant wiki pages, working notes, and approved raw context using keyword and metadata-aware retrieval
+**And** it prioritizes accepted wiki content over working notes over raw content
 **And** the total context package is limited to 3000 tokens maximum
 
 **Given** multiple relevant files are found for context generation
@@ -1038,13 +1039,14 @@ So that agents receive relevant background within token limits.
 **Then** wiki pages are included in full if under 500 tokens each
 **And** working notes are included as summaries (first paragraph + key points)
 **And** source file paths are included for each piece of content
-**And** contradictory information is flagged with [CONFLICTING INFO] markers
+**And** contradictory or low-confidence information is flagged with [CONFLICTING INFO] or confidence markers
 
 **Given** I want to inject context into an AI session
 **When** the handoff context is generated
-**Then** it outputs a structured markdown file with: task context, relevant wiki excerpts, working note summaries, and source references
+**Then** it outputs a structured markdown file with: task context, relevant wiki excerpts, working note summaries, source references, and retrieval rationale
 **And** it excludes any files marked with "private: true" in frontmatter
 **And** it includes a token count and source file list at the end
+**And** the same retrieval contract can later back an optional agent-facing adapter without changing canonical storage rules
 
 **Given** I generate context for a specific project
 **When** the system selects content
@@ -1067,8 +1069,8 @@ So that valuable AI interactions are preserved with proper context and metadata.
 **Given** I have an AI conversation file or text to import
 **When** I use the conversation import command
 **Then** the conversation is saved to the raw folder with timestamp and filename format: YYYY-MM-DD-HH-MM-conversation-[service].md
-**And** the import preserves the exact conversation text without modification
-**And** the frontmatter includes: conversation_date, ai_service, import_date, and review_status: "pending"
+**And** the import preserves the exact conversation text without modification as the canonical raw record
+**And** the frontmatter includes: conversation_date, ai_service, import_date, review_status: "pending", import_recipe, and extraction_status
 
 **Given** I import a conversation with mixed content (text, code, links)
 **When** the import is processed
@@ -1081,12 +1083,14 @@ So that valuable AI interactions are preserved with proper context and metadata.
 **Then** the import method is recorded in metadata for troubleshooting
 **And** the system handles plain text, markdown, and JSON conversation formats
 **And** malformed imports are saved with error notes rather than rejected
+**And** the import may optionally produce a separate reviewable extraction artifact containing candidate metadata, topics, decisions, and source spans
 
 **Given** I want to process imported conversations for promotion
 **When** I review the raw conversation files
-**Then** I can manually select and copy sections for promotion to working notes
+**Then** I can review extraction output and manually select and copy sections for promotion to working notes
 **And** the original conversation file remains unchanged as source material
 **And** any promoted content includes a link back to the source conversation file
+**And** promoted content can be traced back to the unchanged raw conversation file
 
 ### Story 4.2: Non-AI Source Capture
 
@@ -1099,8 +1103,10 @@ So that all knowledge inputs are tracked regardless of origin.
 **Given** I want to capture content from a web source
 **When** I provide a URL and use the source capture command
 **Then** the system saves the URL, page title, and capture date to frontmatter
-**And** I manually add my own summary, quotes, or notes in the content body
-**And** the captured content is saved to inbox with source_type: "web" in metadata
+**And** I can still add my own summary, quotes, or notes in the content body
+**And** the captured content is saved to inbox or raw with source_type metadata appropriate to the source
+**And** the capture workflow may optionally generate a fingerprint and candidate metadata for duplicate review and later retrieval
+**And** any generated metadata remains reviewable and editable before it influences promotion or retrieval
 
 **Given** I capture content from offline sources (books, meetings, videos)
 **When** I create the capture entry
@@ -1130,9 +1136,11 @@ So that the system adapts to my specific workflow and input patterns.
 
 **Given** I want to customize folder locations and file naming
 **When** I edit the configuration file
-**Then** I can specify custom paths for inbox, raw, working, wiki, and archive folders
+**Then** I can specify custom paths for inbox, raw, working, wiki, archive, and derived-artifact locations where needed
 **And** I can set filename patterns with variables like {date}, {time}, {source_type}
+**And** I can configure import recipes, extraction strictness, dedup behavior, and retrieval-index rebuild settings
 **And** invalid path configurations show clear error messages with suggested fixes
+**And** any optional adapter or derived-index setting is clearly marked as non-canonical support infrastructure
 
 **Given** I have multiple projects that need separation
 **When** I configure project-specific settings
@@ -1349,10 +1357,12 @@ So that I can maintain trust and quality in my stored knowledge over time.
 
 **Given** health check results are generated
 **When** the scan completes
-**Then** findings are grouped by type: Missing Metadata, Broken Links, Stale Content, Duplicates, Orphans
-**And** each finding shows: file path, issue type, severity (high/medium/low), and suggested repair action
+**Then** findings are grouped by type: Missing Metadata, Broken Links, Stale Content, Duplicates, Orphans, Extraction Confidence Gaps, Derived Index Drift
+**And** each finding shows: file path, issue type, severity (high/medium/low), rule triggered, and suggested repair action
 **And** high-confidence deterministic issues (broken links, missing metadata) are listed before heuristic issues
 **And** total counts are provided for each finding type
+**And** duplicate findings distinguish title similarity from fingerprint-based duplicate candidates
+**And** health checks can verify whether derived retrieval artifacts are stale relative to canonical files
 
 **Given** I want to focus on specific health check areas
 **When** I run targeted health checks
@@ -1372,7 +1382,7 @@ So that I can systematically improve my knowledge base quality.
 **Given** I have health check findings to resolve
 **When** I review a specific finding
 **Then** I see the full context: affected file, issue description, severity, and 2-3 suggested repair actions
-**And** I can choose from actions like: update metadata, fix link, merge duplicate, archive file, or defer
+**And** I can choose from actions like: update metadata, accept or reject extracted metadata, fix link, merge duplicate, ignore fingerprint match, rebuild a stale derived index, archive file, or defer
 **And** each action shows exactly what will be changed before I confirm
 
 **Given** I choose to fix a broken link
@@ -1495,8 +1505,8 @@ So that I can understand and verify what the system has done.
 **Given** any automated operation runs (triage, promotion, health checks, imports)
 **When** the operation completes
 **Then** a detailed log file is created in `logs/` with timestamp: `operation-YYYY-MM-DD-HHMMSS.log`
-**And** the log includes: operation type, files affected, changes made, duration, success/failure status
-**And** no files are modified without creating a corresponding log entry
+**And** the log includes: operation type, files affected, changes made, duration, success/failure status, and whether canonical or derived artifacts were touched
+**And** no files are modified and no derived artifacts are refreshed without creating a corresponding log entry
 
 **Given** automated metadata updates occur (timestamps, review triggers, etc.)
 **When** files are modified
@@ -1511,6 +1521,7 @@ So that I can understand and verify what the system has done.
 **And** each operation shows: type, files affected, success rate, any errors or warnings
 **And** I can drill down into specific operations to see detailed logs
 **And** suspicious patterns (many failures, unexpected file changes) are highlighted
+**And** extraction outputs, dedup reports, and retrieval-index rebuilds are stored as reviewable artifacts rather than hidden state transitions
 
 ### Story 7.4: 15-Minute Daily Maintenance (NFR-012)
 

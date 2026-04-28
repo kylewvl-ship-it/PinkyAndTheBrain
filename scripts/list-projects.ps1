@@ -5,6 +5,7 @@
 param(
     [string]$Project = "",
     [switch]$Counts,
+    [switch]$Domain,
     [switch]$Help
 )
 
@@ -13,11 +14,26 @@ if (!(Test-Path "$PSScriptRoot/lib/common.ps1")) {
     exit 2
 }
 . "$PSScriptRoot/lib/common.ps1"
+. "$PSScriptRoot/lib/frontmatter.ps1"
+
+function Get-FrontmatterValuesLocal {
+    param([string]$Frontmatter, [string]$Key)
+    $value = Get-FrontmatterValue -Frontmatter $Frontmatter -Key $Key
+    if ([string]::IsNullOrWhiteSpace($value)) { return @() }
+    $trimmed = $value.Trim()
+    if ($trimmed.StartsWith('[') -and $trimmed.EndsWith(']')) {
+        return @(($trimmed.Trim('[', ']') -split ',') |
+            ForEach-Object { $_.Trim().Trim('"').Trim("'") } |
+            Where-Object { $_ -ne '' })
+    }
+    return @($trimmed.Trim('"').Trim("'"))
+}
 
 if ($Help) {
     Show-Usage "list-projects.ps1" "List all projects and their file counts" @(
         ".\scripts\list-projects.ps1"
         ".\scripts\list-projects.ps1 -Project accounting"
+        ".\scripts\list-projects.ps1 -Domain"
         ".\scripts\list-projects.ps1 -Counts"
     )
     exit 0
@@ -33,11 +49,15 @@ $searchFolders = @(
     $config.folders.wiki
 )
 
-Write-Host "`nPinkyAndTheBrain Projects" -ForegroundColor Cyan
+$fieldName = if ($Domain) { "domain" } else { "project" }
+$headerName = if ($Domain) { "Domains" } else { "Projects" }
+
+Write-Host "`nPinkyAndTheBrain $headerName" -ForegroundColor Cyan
 Write-Host "Vault: $vaultRoot`n" -ForegroundColor Gray
 
-# Collect projects by scanning YAML front-matter for 'project:' field
+# Collect values by scanning YAML front-matter.
 $projectCounts = @{}
+$untaggedCount = 0
 $totalFiles = 0
 
 foreach ($folder in $searchFolders) {
@@ -47,39 +67,32 @@ foreach ($folder in $searchFolders) {
     $mdFiles = Get-ChildItem $folderPath -Filter "*.md" -Recurse -ErrorAction SilentlyContinue
     foreach ($file in $mdFiles) {
         $totalFiles++
-        $proj = $null
 
-        # Extract project from front-matter
-        $lines = Get-Content $file.FullName -TotalCount 20 -ErrorAction SilentlyContinue
-        $inFrontMatter = $false
-        $lineIndex = 0
-        foreach ($line in $lines) {
-            if ($line -eq '---') {
-                if (!$inFrontMatter) { $inFrontMatter = $true } else { break }
-                $lineIndex++; continue
-            }
-            if ($inFrontMatter -and $line -match '^project:\s*(.+)$') {
-                $proj = $Matches[1].Trim().Trim('"').Trim("'")
-                if ([string]::IsNullOrWhiteSpace($proj)) { $proj = $null }
-                break
-            }
-            if (!$inFrontMatter -and $lineIndex -gt 0) { break }
-            $lineIndex++
+        $content = Get-Content -Path $file.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+        $frontmatterData = Get-FrontmatterData -Content $content
+        $values = @()
+        if ($null -ne $frontmatterData) {
+            $values = @(Get-FrontmatterValuesLocal -Frontmatter $frontmatterData.Frontmatter -Key $fieldName)
         }
 
-        if ($null -eq $proj) { continue }
-        if (!$projectCounts.ContainsKey($proj)) { $projectCounts[$proj] = 0 }
-        $projectCounts[$proj]++
+        if ($values.Count -eq 0) {
+            $untaggedCount++
+            continue
+        }
+
+        foreach ($value in $values) {
+            if (!$projectCounts.ContainsKey($value)) { $projectCounts[$value] = 0 }
+            $projectCounts[$value]++
+        }
     }
 }
 
-if ($projectCounts.Count -eq 0) {
+if ($projectCounts.Count -eq 0 -and $untaggedCount -eq 0) {
     Write-Host "No markdown files found in knowledge folders." -ForegroundColor Yellow
     exit 0
 }
 
-# Filter by project if specified
-if ($Project) {
+if ($Project -and -not $Domain) {
     if ($projectCounts.ContainsKey($Project)) {
         Write-Host "Project: $Project" -ForegroundColor White
         Write-Host "  Files: $($projectCounts[$Project])" -ForegroundColor Gray
@@ -91,16 +104,22 @@ if ($Project) {
     }
 }
 else {
-    # List all projects
     $sorted = $projectCounts.GetEnumerator() | Sort-Object -Property Key
-    $maxLen = ($sorted | ForEach-Object { $_.Key.Length } | Measure-Object -Maximum).Maximum
+    $maxLen = 10
+    if ($sorted.Count -gt 0) {
+        $maxLen = ($sorted | ForEach-Object { $_.Key.Length } | Measure-Object -Maximum).Maximum
+    }
 
     foreach ($entry in $sorted) {
         $name = $entry.Key.PadRight($maxLen + 2)
         $count = "$($entry.Value) file(s)"
         Write-Host "  $name $count" -ForegroundColor White
     }
+    if ($untaggedCount -gt 0) {
+        Write-Host "  (untagged)".PadRight($maxLen + 4) "$untaggedCount file(s)" -ForegroundColor DarkGray
+    }
 
     Write-Host ""
-    Write-Host "Total: $($projectCounts.Count) project(s), $totalFiles file(s)" -ForegroundColor Gray
+    $totalLabel = if ($Domain) { "domain(s)" } else { "project(s)" }
+    Write-Host "Total: $($projectCounts.Count) $totalLabel, $totalFiles file(s)" -ForegroundColor Gray
 }

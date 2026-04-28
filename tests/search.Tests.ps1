@@ -189,4 +189,70 @@ See [[missing-topic]] and [missing](knowledge/wiki/not-found.md)
         $result.Output | Should Match "\[BROKEN LINK: knowledge/wiki/not-found\.md\]"
         (Get-Content -Path $path -Raw) | Should Match "\[\[missing-topic\]\]"
     }
+
+    It "filters Project by scalar value" {
+        Initialize-SearchWorkspace
+        New-SearchDocument -RelativePath "knowledge/wiki/work-budget.md" -Title "budget work" -Body "budget item" -Metadata @{ project = "work" } | Out-Null
+        New-SearchDocument -RelativePath "knowledge/wiki/other-budget.md" -Title "budget other" -Body "budget item" -Metadata @{ project = "other" } | Out-Null
+
+        $result = Invoke-SearchScript -Arguments @("-Query", "budget", "-Project", "work", "-Wiki")
+
+        $result.ExitCode | Should Be 0
+        $result.Output | Should Match "work-budget.md"
+        $result.Output | Should Not Match "other-budget.md"
+    }
+
+    It "filters Project by array value" {
+        Initialize-SearchWorkspace
+        New-SearchDocument -RelativePath "knowledge/wiki/array-budget.md" -Title "budget array" -Body "budget item" -Metadata @{ project = '["work","research"]' } | Out-Null
+
+        $result = Invoke-SearchScript -Arguments @("-Query", "budget", "-Project", "work", "-Wiki")
+
+        $result.ExitCode | Should Be 0
+        $result.Output | Should Match "array-budget.md"
+    }
+
+    It "excludes untagged files from Project scoped results" {
+        Initialize-SearchWorkspace
+        New-SearchDocument -RelativePath "knowledge/wiki/no-project-budget.md" -Title "budget none" -Body "budget item" | Out-Null
+
+        $result = Invoke-SearchScript -Arguments @("-Query", "budget", "-Project", "work", "-Wiki")
+
+        $result.ExitCode | Should Be 0
+        $result.Output | Should Not Match "no-project-budget.md"
+    }
+
+    It "includes shared files in Project scoped results" {
+        Initialize-SearchWorkspace
+        New-SearchDocument -RelativePath "knowledge/wiki/shared-budget.md" -Title "budget shared" -Body "budget item" -Metadata @{ shared = "true" } | Out-Null
+
+        $result = Invoke-SearchScript -Arguments @("-Query", "budget", "-Project", "work", "-Wiki")
+
+        $result.ExitCode | Should Be 0
+        $result.Output | Should Match "shared-budget.md"
+    }
+
+    It "filters Domain by scalar and array values" {
+        Initialize-SearchWorkspace
+        New-SearchDocument -RelativePath "knowledge/wiki/accounting.md" -Title "depreciation accounting" -Body "depreciation item" -Metadata @{ domain = "accounting" } | Out-Null
+        New-SearchDocument -RelativePath "knowledge/wiki/tax.md" -Title "depreciation tax" -Body "depreciation item" -Metadata @{ domain = '["accounting","tax"]' } | Out-Null
+        New-SearchDocument -RelativePath "knowledge/wiki/legal.md" -Title "depreciation legal" -Body "depreciation item" -Metadata @{ domain = "legal" } | Out-Null
+
+        $result = Invoke-SearchScript -Arguments @("-Query", "depreciation", "-Domain", "accounting", "-Wiki")
+
+        $result.ExitCode | Should Be 0
+        $result.Output | Should Match "accounting.md"
+        $result.Output | Should Match "tax.md"
+        $result.Output | Should Not Match "legal.md"
+    }
+
+    It "includes shared files in Domain scoped results" {
+        Initialize-SearchWorkspace
+        New-SearchDocument -RelativePath "knowledge/wiki/shared-domain.md" -Title "depreciation shared" -Body "depreciation item" -Metadata @{ domain = "legal"; shared = "true" } | Out-Null
+
+        $result = Invoke-SearchScript -Arguments @("-Query", "depreciation", "-Domain", "accounting", "-Wiki")
+
+        $result.ExitCode | Should Be 0
+        $result.Output | Should Match "shared-domain.md"
+    }
 }

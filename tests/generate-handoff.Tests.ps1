@@ -297,4 +297,63 @@ line four
 
         $result.ExitCode | Should Be 1
     }
+
+    It "filters by Domain" {
+        Initialize-HandoffWorkspace
+        New-HandoffDocument -RelativePath "knowledge/wiki/accounting-topic.md" -Title "topic accounting" -Body "topic paragraph" -Metadata @{ domain = "accounting" } | Out-Null
+        New-HandoffDocument -RelativePath "knowledge/wiki/legal-topic.md" -Title "topic legal" -Body "topic paragraph" -Metadata @{ domain = "legal" } | Out-Null
+
+        $result = Invoke-HandoffScript -Arguments @("-Topic", "topic", "-Domain", "accounting")
+        $content = Get-HandoffContent
+
+        $result.ExitCode | Should Be 0
+        $content | Should Match "accounting-topic.md"
+        $content | Should Not Match "legal-topic.md"
+    }
+
+    It "writes the Domain footer line" {
+        Initialize-HandoffWorkspace
+        New-HandoffDocument -RelativePath "knowledge/wiki/accounting-topic.md" -Title "topic accounting" -Body "topic paragraph" -Metadata @{ domain = "accounting" } | Out-Null
+
+        $result = Invoke-HandoffScript -Arguments @("-Topic", "topic", "-Domain", "accounting")
+        $content = Get-HandoffContent
+
+        $result.ExitCode | Should Be 0
+        $content | Should Match '\*\*Domain scope:\*\* accounting'
+    }
+
+    It "includes shared files despite Project mismatch" {
+        Initialize-HandoffWorkspace
+        New-HandoffDocument -RelativePath "knowledge/wiki/shared-topic.md" -Title "topic shared" -Body "topic paragraph" -Metadata @{ project = "home"; shared = "true" } | Out-Null
+
+        $result = Invoke-HandoffScript -Arguments @("-Topic", "topic", "-Project", "work")
+        $content = Get-HandoffContent
+
+        $result.ExitCode | Should Be 0
+        $content | Should Match "shared-topic.md"
+    }
+
+    It "includes shared files despite Domain mismatch" {
+        Initialize-HandoffWorkspace
+        New-HandoffDocument -RelativePath "knowledge/wiki/shared-domain-topic.md" -Title "topic shared" -Body "topic paragraph" -Metadata @{ domain = "legal"; shared = "true" } | Out-Null
+
+        $result = Invoke-HandoffScript -Arguments @("-Topic", "topic", "-Domain", "accounting")
+        $content = Get-HandoffContent
+
+        $result.ExitCode | Should Be 0
+        $content | Should Match "shared-domain-topic.md"
+    }
+
+    It "keeps Project scoping after Domain changes" {
+        Initialize-HandoffWorkspace
+        New-HandoffDocument -RelativePath "knowledge/wiki/work-topic.md" -Title "topic work" -Body "topic paragraph" -Metadata @{ project = "work" } | Out-Null
+        New-HandoffDocument -RelativePath "knowledge/wiki/home-topic.md" -Title "topic home" -Body "topic paragraph" -Metadata @{ project = "home" } | Out-Null
+
+        $result = Invoke-HandoffScript -Arguments @("-Topic", "topic", "-Project", "work")
+        $content = Get-HandoffContent
+
+        $result.ExitCode | Should Be 0
+        $content | Should Match "work-topic.md"
+        $content | Should Not Match "home-topic.md"
+    }
 }
