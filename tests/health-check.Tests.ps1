@@ -107,13 +107,22 @@ Describe "health-check.ps1 - Story 6.1" {
     It "reports orphan files but not files with incoming links" {
         Initialize-HealthWorkspace
         New-HealthFile -RelativePath "wiki/referenced.md" -Frontmatter "status: active`nconfidence: medium`nlast_updated: 2026-04-01`nlast_verified: 2026-04-01`nsources: source-a" | Out-Null
-        New-HealthFile -RelativePath "wiki/linker.md" -Frontmatter "status: active`nconfidence: medium`nlast_updated: 2026-04-01`nlast_verified: 2026-04-01`nsources: source-a" -Body "This note links to [[referenced]] with enough words to avoid short content." | Out-Null
+        New-HealthFile -RelativePath "inbox/linker.md" -Frontmatter "status: active`nconfidence: medium`nlast_updated: 2026-04-01`nlast_verified: 2026-04-01`nsources: source-a" -Body "This note links to [[referenced]] with enough words to avoid short content." | Out-Null
         New-HealthFile -RelativePath "wiki/orphan.md" -Frontmatter "status: active`nconfidence: medium`nlast_updated: 2026-04-01`nlast_verified: 2026-04-01`nsources: source-a" | Out-Null
 
         $result = Invoke-HealthScript -Arguments @("-Type", "orphans")
 
         $result.Output | Should Match "wiki/orphan.md"
         $result.Output | Should Not Match "wiki/referenced.md"
+    }
+
+    It "does not count self-links as orphan incoming links" {
+        Initialize-HealthWorkspace
+        New-HealthFile -RelativePath "wiki/self-linked.md" -Frontmatter "status: active`nconfidence: medium`nlast_updated: 2026-04-01`nlast_verified: 2026-04-01`nsources: source-a" -Body "This note links to [[self-linked]] but no other knowledge file links here." | Out-Null
+
+        $result = Invoke-HealthScript -Arguments @("-Type", "orphans")
+
+        $result.Output | Should Match "wiki/self-linked.md"
     }
 
     It "reports stale content and overdue review triggers" {
@@ -137,10 +146,23 @@ Describe "health-check.ps1 - Story 6.1" {
 
         $result = Invoke-HealthScript -Arguments @("-Type", "duplicates")
 
-        $result.Output | Should Match "Duplicates \(title-similarity\)"
+        $result.Output | Should Match "Duplicates"
+        $result.Output | Should Match "Subtype: title-similarity"
         $result.Output | Should Match "alpha"
         $result.Output | Should Match "alphi"
         $result.Output | Should Not Match "bravo.md"
+    }
+
+    It "uses frontmatter title for duplicate edit-distance comparison before filename stem" {
+        Initialize-HealthWorkspace
+        New-HealthFile -RelativePath "wiki/2026-01-01-alpha-concept.md" -Frontmatter "title: Alpha Concept`nstatus: active`nconfidence: medium`nlast_updated: 2026-04-01`nlast_verified: 2026-04-01`nsources: source-a" -Body "alpha concept unique body long enough to avoid fingerprint duplicate behavior" | Out-Null
+        New-HealthFile -RelativePath "wiki/unrelated-file-name.md" -Frontmatter "title: Alpha Conxept`nstatus: active`nconfidence: medium`nlast_updated: 2026-04-01`nlast_verified: 2026-04-01`nsources: source-a" -Body "alpha conxept different body long enough to avoid fingerprint duplicate behavior" | Out-Null
+
+        $result = Invoke-HealthScript -Arguments @("-Type", "duplicates")
+
+        $result.Output | Should Match "title-edit-distance"
+        $result.Output | Should Match "alpha concept"
+        $result.Output | Should Match "alpha conxept"
     }
 
     It "reports duplicate fingerprint candidates" {
@@ -151,7 +173,8 @@ Describe "health-check.ps1 - Story 6.1" {
 
         $result = Invoke-HealthScript -Arguments @("-Type", "duplicates")
 
-        $result.Output | Should Match "Duplicates \(fingerprint-candidate\)"
+        $result.Output | Should Match "Duplicates"
+        $result.Output | Should Match "Subtype: fingerprint-candidate"
         $result.Output | Should Match "body-sha256-match"
     }
 

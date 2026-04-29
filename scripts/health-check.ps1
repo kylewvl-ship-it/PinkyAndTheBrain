@@ -422,7 +422,7 @@ function Test-Duplicates {
             Folder = $_.DirectoryName
             Stem = $stem
             Title = $title
-            CompareName = $stem.ToLowerInvariant()
+            CompareName = $title.ToLowerInvariant()
             Body = $body
             BodyLength = $body.Length
             BodyHash = Get-BodyHash $body
@@ -459,7 +459,7 @@ function Test-Duplicates {
                         Severity = "Medium"
                         File = "$($items[$i].RelativePath), $($items[$j].RelativePath)"
                         Rule = "title-edit-distance"
-                        Issue = "Similar filenames: '$($items[$i].Stem)' and '$($items[$j].Stem)' (distance $distance)"
+                        Issue = "Similar titles or filenames: '$($items[$i].CompareName)' and '$($items[$j].CompareName)' (distance $distance)"
                         Suggestion = "Review files and merge or rename duplicates"
                     }
                 }
@@ -608,22 +608,37 @@ function Test-Orphans {
     
     Write-Host "🏝️ Checking for orphaned files..." -ForegroundColor Cyan
     
-    # Get all files and their links
-    $allFiles = @()
-    $allLinks = @()
-    
-    $folders = @($Config.folders.working, $Config.folders.wiki)
-    
-    foreach ($folder in $folders) {
+    $candidateFiles = @()
+    $sourceFiles = @()
+    $targetMap = @{}
+    $incomingTargets = @{}
+
+    foreach ($folder in @($Config.folders.working, $Config.folders.wiki)) {
         $folderPath = "$vaultRoot/$folder"
         if (!(Test-Path $folderPath)) { continue }
-        
-        $files = Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse
-        $allFiles += $files
-        
-        foreach ($file in $files) {
+        $candidateFiles += Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse
+    }
+
+    foreach ($file in $candidateFiles) {
+        $relativePath = Get-HealthRelativePath $file.FullName $vaultRoot
+        $stem = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+        foreach ($key in @($relativePath, ($relativePath -replace '\.md$', ''), $stem)) {
+            if (!$targetMap.ContainsKey($key)) { $targetMap[$key] = @() }
+            $targetMap[$key] += $relativePath
+        }
+    }
+
+    foreach ($folder in @($Config.folders.inbox, $Config.folders.raw, $Config.folders.working, $Config.folders.wiki)) {
+        $folderPath = "$vaultRoot/$folder"
+        if (Test-Path $folderPath) {
+            $sourceFiles += Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse
+        }
+    }
+
+    foreach ($file in $sourceFiles) {
             try {
                 $content = Get-Content $file.FullName -Raw
+                $sourceRelativePath = Get-HealthRelativePath $file.FullName $vaultRoot
                 
                 # Find all internal links
                 $links = @()
@@ -631,31 +646,33 @@ function Test-Orphans {
                 $links += [regex]::Matches($content, '\[\[([^\]]+)\]\]') | ForEach-Object { $_.Groups[1].Value }
                 
                 foreach ($link in $links) {
-                    if ($link -notmatch '^https?://') {
-                        $allLinks += $link -replace '#.*$', '' # Remove anchors
+                    if ($link -match '^https?://') { continue }
+                    $cleanLink = ($link -replace '#.*$', '').Trim()
+                    $lookupKeys = @(
+                        $cleanLink,
+                        ([System.IO.Path]::GetFileNameWithoutExtension($cleanLink)),
+                        ($cleanLink + ".md")
+                    )
+                    foreach ($key in $lookupKeys) {
+                        if (!$targetMap.ContainsKey($key)) { continue }
+                        foreach ($targetRelativePath in $targetMap[$key]) {
+                            if ($targetRelativePath -ne $sourceRelativePath) {
+                                $incomingTargets[$targetRelativePath] = $true
+                            }
+                        }
                     }
                 }
             }
             catch {
                 Write-Log "Error processing $($file.FullName): $($_.Exception.Message)" "WARN"
             }
-        }
     }
     
     # Find files with no incoming links
-    foreach ($file in $allFiles) {
-        $fileName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+    foreach ($file in $candidateFiles) {
         $relativePath = Get-HealthRelativePath $file.FullName $vaultRoot
-        
-        $hasIncomingLinks = $false
-        foreach ($link in $allLinks) {
-            if ($link -eq $fileName -or $link -eq $relativePath -or $link -eq ($relativePath -replace '\.md$', '')) {
-                $hasIncomingLinks = $true
-                break
-            }
-        }
-        
-        if (!$hasIncomingLinks) {
+
+        if (!$incomingTargets.ContainsKey($relativePath)) {
             $findings += [PSCustomObject]@{
                 Type = "Orphans"
                 Severity = "Low"
@@ -685,6 +702,13 @@ function Get-HealthTypeOrder {
     }
 }
 
+function Get-HealthDisplayType {
+    param([string]$Type)
+
+    if ($Type -like "Duplicates*") { return "Duplicates" }
+    return $Type
+}
+
 function Get-HealthSeverityOrder {
     param([string]$Severity)
 
@@ -699,7 +723,7 @@ function Get-HealthSeverityOrder {
 function Get-OrderedHealthGroups {
     param([array]$Findings)
 
-    return @($Findings | Group-Object Type | Sort-Object @{ Expression = { Get-HealthTypeOrder $_.Name } }, Name)
+    return @($Findings | Group-Object { Get-HealthDisplayType $_.Type } | Sort-Object @{ Expression = { Get-HealthTypeOrder $_.Name } }, Name)
 }
 
 function Write-HealthReportFile {
@@ -741,6 +765,9 @@ function Write-HealthReportFile {
             $rule = if ($finding.PSObject.Properties.Name -contains "Rule") { $finding.Rule } else { "" }
             $lines += ""
             $lines += "- **$($finding.Severity)** $($finding.File)"
+            if ((Get-HealthDisplayType $finding.Type) -ne $finding.Type) {
+                $lines += "  - Subtype: $($finding.Type -replace '^Duplicates \((.*)\)$', '$1')"
+            }
             $lines += "  - Rule: $rule"
             $lines += "  - Issue: $($finding.Issue)"
             $lines += "  - Suggested repair: $($finding.Suggestion)"
@@ -800,6 +827,9 @@ function Show-HealthReport {
             
             Write-Host "[$($finding.Severity)]" -NoNewline -ForegroundColor $severityColor
             Write-Host " $($finding.File)" -ForegroundColor White
+            if ((Get-HealthDisplayType $finding.Type) -ne $finding.Type) {
+                Write-Host "  Subtype: $($finding.Type -replace '^Duplicates \((.*)\)$', '$1')" -ForegroundColor DarkGray
+            }
             if ($finding.PSObject.Properties.Name -contains "Rule") {
                 Write-Host "  Rule: $($finding.Rule)" -ForegroundColor DarkGray
             }
