@@ -56,6 +56,11 @@ if ($DryRun) {
     return
 }
 
+if (-not (Get-Command $CodexCommand -ErrorAction SilentlyContinue)) {
+    Write-Warning "Codex CLI ($CodexCommand) not found on PATH — integration unavailable"
+    exit 0
+}
+
 $output = $prompt | & $CodexCommand @codexArgs
 $exitCode = $LASTEXITCODE
 $raw = ($output | Out-String).Trim()

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd /c \"scripts\\\\invoke-codex-handoff.cmd -Review\")",
+      "Bash(codex.cmd exec *)"
+    ]
+  }
+}

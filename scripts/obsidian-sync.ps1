@@ -328,6 +328,10 @@ Welcome to your personal knowledge management system.
 }
 
 try {
+    if (-not (Get-Command "obsidian-cli" -ErrorAction SilentlyContinue)) {
+        Write-Verbose "obsidian-cli not found — all operations use pure PowerShell file operations (no degradation)"
+    }
+
     # Load configuration
     $config = Get-Config
     

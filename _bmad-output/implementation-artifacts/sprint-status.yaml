@@ -92,7 +92,7 @@ development_status:
   epic-6: in-progress
   6-1-automated-health-checks: done
   6-2-health-check-finding-resolution: done
-  6-3-offline-and-hook-free-operation: ready-for-dev
+  6-3-offline-and-hook-free-operation: review
   epic-6-retrospective: optional
   
   # Epic 7: System Reliability & NFR Compliance

@@ -62,6 +62,11 @@ if ($DryRun) {
     return
 }
 
+if (-not (Get-Command $ClaudeCommand -ErrorAction SilentlyContinue)) {
+    Write-Warning "Claude CLI ($ClaudeCommand) not found on PATH — integration unavailable"
+    exit 0
+}
+
 $output = $prompt | & $ClaudeCommand @claudeArgs 2>&1
 $exitCode = $LASTEXITCODE
 $raw = ($output | Out-String).Trim()

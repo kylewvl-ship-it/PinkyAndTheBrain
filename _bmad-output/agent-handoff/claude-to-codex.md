@@ -1,65 +1,52 @@
-# Codex Handoff — Code Review (Re-review after fix cycle 1)
+# Codex Task: Fix 6.2 Review Findings
 
-**Story ID:** 5.5
-**Story Key:** 5-5-import-rollback-and-recovery
-**Task Type:** code-review-recheck
-**Handoff Started:** 2026-04-29T00:00:00Z
+## Task Type
+BMAD Fix — address 4 confirmed code review findings for story 6.2.
 
-## Context
+## Findings to Fix
 
-First review returned 3 findings (R1 HIGH, R2 MEDIUM, R3 MEDIUM). All three have been addressed:
+### H1 (High) — Path traversal in resolve-findings.ps1
 
-**R1 (HIGH)** — completed-with-errors path wrote the import log `rollback` field, permanently blocking retry via idempotency guard.
-Fix: the `rollback` field is now written to the import log only when `$totals.errors -eq 0`. A `completed-with-errors` run leaves the field absent so the user can retry.
-Location: `scripts/rollback-import.ps1` around the block that was lines 507-511.
+`resolve-findings.ps1` resolves report-derived file paths with `GetFullPath` but never verifies the result stays within `$VaultRoot` or `$RepoRoot`. A crafted finding like `../../outside.md` could read/write outside the knowledge vault.
 
-**R2 (MEDIUM)** — confirmation-gate test did not assert file survival after aborted or `-Force`-only runs.
-Fix: added `Test-Path $target | Should Be $true` immediately after the no-confirm run and immediately after the `-Force`-only run.
-Location: `tests/rollback-import.Tests.ps1`, the "enforces the confirmation gate" test.
+Fix: after resolving any path from a report finding, check that it starts with the canonical vault root. If it does not, skip the finding with a warning and continue. Pattern to mirror: `scripts/rollback-import.ps1` uses path-containment checks — apply the same approach.
 
-**R3 (MEDIUM)** — hard-coded `2026-04-28` timestamps would fail after 7-day recency window moved.
-Fix: added `$script:RecentImportId`, `$script:RecentImportDate`, `$script:OldImportId`, `$script:OldImportDate` computed at module load time relative to `(Get-Date).ToUniversalTime()`. All test call sites updated to use these variables. The recency-gate test now uses `$script:OldImportId` and `$script:OldImportDate` for the over-7-days case. Timestamp-modified tests now set `LastWriteTimeUtc` to `$script:NowUtc` instead of a fixed date.
-Location: `tests/rollback-import.Tests.ps1`, top of file and all `Invoke-RollbackScript` call sites.
+### H2 (High) — fix-link -Force silently selects first candidate
 
-## Validation after fixes
+`resolve-findings.ps1` line ~213: `-Force` is used to both skip confirmation AND auto-select candidate 1 for link repair. These are separate concerns. Auto-selecting a candidate without explicit user input can silently rewrite a link to the wrong file.
 
-Both suites pass:
-- `Invoke-Pester tests\rollback-import.Tests.ps1`: 11/11 passed, 0 failed
-- `Invoke-Pester tests\execute-import.Tests.ps1`: 18/18 passed, 0 failed (no regression)
+Fix: add a `-LinkTarget` parameter (string, optional) for non-interactive link target selection. `-Force` should only skip the apply-confirmation prompt. If no candidates match and no `-LinkTarget` is given, and `-Force` is set, fail with a clear message ("no candidate selected — provide -LinkTarget to proceed non-interactively") and exit 1.
 
-## Task
+### M1 (Medium) — mark-broken not honored by health-check
 
-Re-read the two files and confirm all three findings are correctly resolved. Look for any new issues introduced by the fixes. Pay close attention to:
-- R1 fix: does the `completed-with-errors` path correctly leave the import log untouched so re-running is possible? Is there any edge case where errors cause a partial rollback that would leave orphaned state?
-- R2 fix: do the new `Test-Path $target | Should Be $true` assertions appear in the right place (before the confirmed run)?
-- R3 fix: are there any remaining hard-coded timestamps that would expire? Do the old-import and recent-import test scenarios still test the correct behavior?
+`resolve-findings.ps1` records `mark-broken` under a different action key than `health-check.ps1` reads. The broken link finding reappears on subsequent health check runs.
 
-## Files to review
+Fix: ensure that when `fix-link` action records a `mark-broken` decision to `.ai/health-deferred.json`, it uses `action: "mark-broken"`. In `health-check.ps1`, update the defer-suppression logic to also suppress findings whose matching defer record has `action` equal to `"mark-broken"` (i.e., suppress indefinitely, not just for 30 days — `deferred_until` null or far future).
 
-- `scripts/rollback-import.ps1`
-- `tests/rollback-import.Tests.ps1`
+### M2 (Medium) — Interactive review shows wrong suggested actions
+
+`resolve-findings.ps1` line ~308-313: the guided action display shows only 4 hardcoded actions regardless of finding type. AC1 requires "2-3 suggested repair actions" relevant to the specific finding.
+
+Fix: build a mapping from `rule` → suggested actions. At minimum:
+- `require-metadata` / `require-wiki-sources` / `require-confidence` → suggest `update-metadata`, `archive`, `defer`
+- `link-target-exists` → suggest `fix-link`, `mark-broken` (via fix-link mark-broken option), `defer`
+- `stale-threshold` / `review-trigger-overdue` → suggest `update-metadata` (update `last_updated`), `archive`, `defer`
+- `duplicate-title` / `title-edit-distance` → suggest `merge-duplicate`, `defer`
+- `body-sha256-match` / `body-prefix-length-match` → suggest `ignore-fingerprint`, `merge-duplicate`, `defer`
+- `incoming-link-required` → suggest `archive`, `defer`
+- `index-drift` → suggest `rebuild-index`, `defer`
+- Default (unknown rule) → suggest `archive`, `defer`
 
 ## Validation
-
-Run:
-- `Invoke-Pester tests\rollback-import.Tests.ps1`
-- `Invoke-Pester tests\execute-import.Tests.ps1`
-
-## Report back
-
-Embed full findings inline in your final message. Format:
-
-```
-story_id: 5.5
-task_type: code-review-recheck
-status: approved | findings
-validation_run:
-  - <command>: <pass>/<fail>
-findings:
-  - id: <Rx>
-    severity: HIGH | MEDIUM | LOW
-    ...
-summary: <one paragraph>
+```powershell
+Invoke-Pester tests\resolve-findings.Tests.ps1
+Invoke-Pester tests\health-check.Tests.ps1
 ```
 
-If all findings resolved and no new issues: `findings: none` and `status: approved`.
+Add tests for H1 (path outside vault rejected) and M1 (mark-broken suppresses link finding).
+Both suites must pass 0 failures.
+
+## Report Format
+- Files changed
+- Validation pass/fail counts
+- Status: complete or blocked
