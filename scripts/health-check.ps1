@@ -32,16 +32,97 @@ if ($Help) {
     exit 0
 }
 
+function Get-HealthRelativePath {
+    param([string]$Path, [string]$VaultRoot)
+
+    $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
+    $resolvedVault = (Resolve-Path -LiteralPath $VaultRoot).Path
+    if ($resolvedPath.StartsWith($resolvedVault, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $resolvedPath.Substring($resolvedVault.Length).TrimStart('\', '/') -replace '\\', '/'
+    }
+    return $resolvedPath -replace '\\', '/'
+}
+
+function Get-HealthFrontmatter {
+    param([string]$Content)
+
+    $frontmatter = @{}
+    if ($Content -match '(?s)^---\s*\n(.*?)\n---') {
+        $matches[1] -split "`n" | ForEach-Object {
+            if ($_ -match '^(\w+):\s*(.*)$') {
+                $frontmatter[$matches[1]] = $matches[2].Trim().Trim('"')
+            }
+        }
+    }
+    return $frontmatter
+}
+
+function Test-EmptyFrontmatterValue {
+    param([hashtable]$Frontmatter, [string]$Key)
+
+    if (!$Frontmatter.ContainsKey($Key)) { return $true }
+    $value = [string]$Frontmatter[$Key]
+    return [string]::IsNullOrWhiteSpace($value) -or $value.Trim() -eq "[]"
+}
+
+function Get-MarkdownBody {
+    param([string]$Content)
+
+    return ($Content -replace '(?s)^---.*?---\s*', '').Trim()
+}
+
+function Get-BodyHash {
+    param([string]$Body)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Body)
+        return ([BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '')
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
+function Get-LevenshteinDistance {
+    param([string]$Left, [string]$Right)
+
+    if ($Left -eq $Right) { return 0 }
+    if ([string]::IsNullOrEmpty($Left)) { return $Right.Length }
+    if ([string]::IsNullOrEmpty($Right)) { return $Left.Length }
+
+    $previous = New-Object int[] ($Right.Length + 1)
+    $current = New-Object int[] ($Right.Length + 1)
+    for ($j = 0; $j -le $Right.Length; $j++) { $previous[$j] = $j }
+
+    for ($i = 1; $i -le $Left.Length; $i++) {
+        $current[0] = $i
+        for ($j = 1; $j -le $Right.Length; $j++) {
+            $cost = if ($Left[$i - 1] -eq $Right[$j - 1]) { 0 } else { 1 }
+            $current[$j] = [Math]::Min(
+                [Math]::Min($previous[$j] + 1, $current[$j - 1] + 1),
+                $previous[$j - 1] + $cost
+            )
+        }
+        $temp = $previous
+        $previous = $current
+        $current = $temp
+    }
+    return $previous[$Right.Length]
+}
+
 function Test-Metadata {
     param([hashtable]$Config)
     
     $findings = @()
     $vaultRoot = $Config.system.vault_root
+    $minContentLength = $Config.health_checks.min_content_length
+    if ($null -eq $minContentLength -or $minContentLength -lt 0) { $minContentLength = 100 }
     
     Write-Host "🔍 Checking metadata integrity..." -ForegroundColor Cyan
     
-    # Check all knowledge files
-    $folders = @($Config.folders.inbox, $Config.folders.raw, $Config.folders.working, $Config.folders.wiki, $Config.folders.archive)
+    # Check all non-archived knowledge files
+    $folders = @($Config.folders.inbox, $Config.folders.raw, $Config.folders.working, $Config.folders.wiki)
     
     foreach ($folder in $folders) {
         $folderPath = "$vaultRoot/$folder"
@@ -52,27 +133,21 @@ function Test-Metadata {
         foreach ($file in $files) {
             try {
                 $content = Get-Content $file.FullName -Raw
-                $frontmatter = @{}
                 
                 # Check if frontmatter exists
                 if ($content -notmatch '(?s)^---\s*\n(.*?)\n---') {
                     $findings += [PSCustomObject]@{
                         Type = "Missing Metadata"
                         Severity = "High"
-                        File = $file.FullName.Replace($PWD.Path + "\", "")
+                        File = Get-HealthRelativePath $file.FullName $vaultRoot
+                        Rule = "require-frontmatter"
                         Issue = "No frontmatter found"
                         Suggestion = "Add frontmatter with required fields"
                     }
                     continue
                 }
                 
-                # Parse frontmatter
-                $yamlContent = $matches[1]
-                $yamlContent -split "`n" | ForEach-Object {
-                    if ($_ -match '^(\w+):\s*(.*)$') {
-                        $frontmatter[$matches[1]] = $matches[2].Trim('"')
-                    }
-                }
+                $frontmatter = Get-HealthFrontmatter $content
                 
                 # Check required fields based on folder
                 $requiredFields = switch ($folder) {
@@ -83,25 +158,38 @@ function Test-Metadata {
                 }
                 
                 foreach ($field in $requiredFields) {
-                    if (!$frontmatter.ContainsKey($field) -or [string]::IsNullOrEmpty($frontmatter[$field])) {
+                    if (Test-EmptyFrontmatterValue $frontmatter $field) {
                         $findings += [PSCustomObject]@{
                             Type = "Missing Metadata"
                             Severity = "Medium"
-                            File = $file.FullName.Replace($PWD.Path + "\", "")
+                            File = Get-HealthRelativePath $file.FullName $vaultRoot
+                            Rule = "require-$field"
                             Issue = "Missing required field: $field"
                             Suggestion = "Add $field to frontmatter"
                         }
                     }
                 }
+
+                if (($folder -eq $Config.folders.working -or $folder -eq $Config.folders.wiki) -and (Test-EmptyFrontmatterValue $frontmatter "sources")) {
+                    $findings += [PSCustomObject]@{
+                        Type = "Missing Metadata"
+                        Severity = "Medium"
+                        File = Get-HealthRelativePath $file.FullName $vaultRoot
+                        Rule = "require-sources"
+                        Issue = "Missing source references"
+                        Suggestion = "Add sources to frontmatter"
+                    }
+                }
                 
                 # Check content length
-                $contentBody = $content -replace '(?s)^---.*?---\s*', ''
-                if ($contentBody.Trim().Length -lt 50) {
+                $contentBody = Get-MarkdownBody $content
+                if ($contentBody.Length -lt $minContentLength) {
                     $findings += [PSCustomObject]@{
                         Type = "Missing Metadata"
                         Severity = "Low"
-                        File = $file.FullName.Replace($PWD.Path + "\", "")
-                        Issue = "Content too short (< 50 characters)"
+                        File = Get-HealthRelativePath $file.FullName $vaultRoot
+                        Rule = "min-content-length"
+                        Issue = "Content too short (< $minContentLength characters)"
                         Suggestion = "Add more content or consider deletion"
                     }
                 }
@@ -110,7 +198,8 @@ function Test-Metadata {
                 $findings += [PSCustomObject]@{
                     Type = "Missing Metadata"
                     Severity = "High"
-                    File = $file.FullName.Replace($PWD.Path + "\", "")
+                    File = Get-HealthRelativePath $file.FullName $vaultRoot
+                    Rule = "parse-frontmatter"
                     Issue = "Failed to parse file: $($_.Exception.Message)"
                     Suggestion = "Check file format and encoding"
                 }
@@ -131,7 +220,7 @@ function Test-Links {
     
     # Get all markdown files
     $allFiles = @()
-    $folders = @($Config.folders.inbox, $Config.folders.raw, $Config.folders.working, $Config.folders.wiki, $Config.folders.archive)
+    $folders = @($Config.folders.inbox, $Config.folders.raw, $Config.folders.working, $Config.folders.wiki)
     
     foreach ($folder in $folders) {
         $folderPath = "$vaultRoot/$folder"
@@ -187,7 +276,8 @@ function Test-Links {
                     $findings += [PSCustomObject]@{
                         Type = "Broken Links"
                         Severity = "Medium"
-                        File = $file.FullName.Replace($PWD.Path + "\", "")
+                        File = Get-HealthRelativePath $file.FullName $vaultRoot
+                        Rule = "link-target-exists"
                         Issue = "Broken link: $link"
                         Suggestion = "Update link path or create missing file"
                     }
@@ -261,7 +351,8 @@ function Test-StaleContent {
                     $findings += [PSCustomObject]@{
                         Type = "Stale Content"
                         Severity = $severity
-                        File = $file.FullName.Replace($PWD.Path + "\", "")
+                        File = Get-HealthRelativePath $file.FullName $vaultRoot
+                        Rule = "stale-threshold"
                         Issue = "Content is $([Math]::Round($monthsOld, 1)) months old"
                         Suggestion = "Review and update content or mark as archived"
                     }
@@ -277,7 +368,8 @@ function Test-StaleContent {
                             $findings += [PSCustomObject]@{
                                 Type = "Stale Content"
                                 Severity = "Medium"
-                                File = $file.FullName.Replace($PWD.Path + "\", "")
+                                File = Get-HealthRelativePath $file.FullName $vaultRoot
+                                Rule = "review-trigger-overdue"
                                 Issue = "Review overdue by $daysOverdue days"
                                 Suggestion = "Review content and update review_trigger date"
                             }
@@ -302,6 +394,8 @@ function Test-Duplicates {
     
     $findings = @()
     $vaultRoot = $Config.system.vault_root
+    $similarityThreshold = $Config.health_checks.similarity_threshold
+    if ($null -eq $similarityThreshold -or $similarityThreshold -le 0) { $similarityThreshold = 3 }
     
     Write-Host "🔄 Checking for duplicate content..." -ForegroundColor Cyan
     
@@ -314,34 +408,191 @@ function Test-Duplicates {
             $allFiles += Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse
         }
     }
-    
-    # Group by title and check for duplicates
-    $titleGroups = $allFiles | Group-Object { 
-        try {
-            $content = Get-Content $_.FullName -Raw
-            if ($content -match '(?s)^---\s*\n(.*?)\n---') {
-                $yamlContent = $matches[1]
-                if ($yamlContent -match 'title:\s*"?([^"]*)"?') {
-                    return $matches[1].Trim()
-                }
-            }
-            return [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+
+    $fileData = @($allFiles | ForEach-Object {
+        $content = ""
+        try { $content = Get-Content $_.FullName -Raw } catch { }
+        $frontmatter = Get-HealthFrontmatter $content
+        $stem = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+        $title = if ($frontmatter.ContainsKey("title") -and ![string]::IsNullOrWhiteSpace($frontmatter.title)) { [string]$frontmatter.title } else { $stem }
+        $body = Get-MarkdownBody $content
+        [PSCustomObject]@{
+            File = $_
+            RelativePath = Get-HealthRelativePath $_.FullName $vaultRoot
+            Folder = $_.DirectoryName
+            Stem = $stem
+            Title = $title
+            CompareName = $stem.ToLowerInvariant()
+            Body = $body
+            BodyLength = $body.Length
+            BodyHash = Get-BodyHash $body
         }
-        catch {
-            return [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
-        }
-    }
-    
+    })
+
+    # Existing exact-title behavior, with subtype-compatible reporting.
+    $titleGroups = $fileData | Group-Object Title
     foreach ($group in $titleGroups) {
         if ($group.Count -gt 1) {
-            $files = $group.Group | ForEach-Object { $_.FullName.Replace($PWD.Path + "\", "") }
+            $files = $group.Group | ForEach-Object { $_.RelativePath }
             
             $findings += [PSCustomObject]@{
-                Type = "Duplicates"
+                Type = "Duplicates (title-similarity)"
                 Severity = "Medium"
                 File = $files -join ", "
+                Rule = "duplicate-title"
                 Issue = "Duplicate title: '$($group.Name)'"
                 Suggestion = "Review files and merge or rename duplicates"
+            }
+        }
+    }
+
+    # Edit-distance candidates are limited to files in the same folder.
+    foreach ($folderGroup in ($fileData | Group-Object Folder)) {
+        $items = @($folderGroup.Group)
+        for ($i = 0; $i -lt $items.Count; $i++) {
+            for ($j = $i + 1; $j -lt $items.Count; $j++) {
+                if ($items[$i].Stem.Length -gt 50 -and $items[$j].Stem.Length -gt 50) { continue }
+                $distance = Get-LevenshteinDistance $items[$i].CompareName $items[$j].CompareName
+                if ($distance -gt 0 -and $distance -lt $similarityThreshold) {
+                    $findings += [PSCustomObject]@{
+                        Type = "Duplicates (title-similarity)"
+                        Severity = "Medium"
+                        File = "$($items[$i].RelativePath), $($items[$j].RelativePath)"
+                        Rule = "title-edit-distance"
+                        Issue = "Similar filenames: '$($items[$i].Stem)' and '$($items[$j].Stem)' (distance $distance)"
+                        Suggestion = "Review files and merge or rename duplicates"
+                    }
+                }
+            }
+        }
+    }
+
+    $reportedPairs = @{}
+    foreach ($hashGroup in ($fileData | Where-Object { $_.BodyLength -gt 0 } | Group-Object BodyHash)) {
+        if ($hashGroup.Count -gt 1) {
+            $items = @($hashGroup.Group)
+            for ($i = 0; $i -lt $items.Count; $i++) {
+                for ($j = $i + 1; $j -lt $items.Count; $j++) {
+                    $key = @($items[$i].RelativePath, $items[$j].RelativePath) | Sort-Object
+                    $pairKey = $key -join "|"
+                    $reportedPairs[$pairKey] = $true
+                    $findings += [PSCustomObject]@{
+                        Type = "Duplicates (fingerprint-candidate)"
+                        Severity = "Medium"
+                        File = "$($items[$i].RelativePath), $($items[$j].RelativePath)"
+                        Rule = "body-sha256-match"
+                        Issue = "Identical content fingerprint"
+                        Suggestion = "Review files and merge or archive duplicates"
+                    }
+                }
+            }
+        }
+    }
+
+    for ($i = 0; $i -lt $fileData.Count; $i++) {
+        for ($j = $i + 1; $j -lt $fileData.Count; $j++) {
+            if ($fileData[$i].BodyLength -eq 0 -or $fileData[$j].BodyLength -eq 0) { continue }
+            $key = @($fileData[$i].RelativePath, $fileData[$j].RelativePath) | Sort-Object
+            $pairKey = $key -join "|"
+            if ($reportedPairs.ContainsKey($pairKey)) { continue }
+
+            $maxLength = [Math]::Max($fileData[$i].BodyLength, $fileData[$j].BodyLength)
+            $lengthDelta = [Math]::Abs($fileData[$i].BodyLength - $fileData[$j].BodyLength)
+            $prefixA = if ($fileData[$i].BodyLength -lt 200) { $fileData[$i].Body } else { $fileData[$i].Body.Substring(0, 200) }
+            $prefixB = if ($fileData[$j].BodyLength -lt 200) { $fileData[$j].Body } else { $fileData[$j].Body.Substring(0, 200) }
+            if ($maxLength -gt 0 -and ($lengthDelta / $maxLength) -le 0.05 -and $prefixA -eq $prefixB) {
+                $reportedPairs[$pairKey] = $true
+                $findings += [PSCustomObject]@{
+                    Type = "Duplicates (fingerprint-candidate)"
+                    Severity = "Medium"
+                    File = "$($fileData[$i].RelativePath), $($fileData[$j].RelativePath)"
+                    Rule = "body-prefix-length-match"
+                    Issue = "Near-identical content fingerprint"
+                    Suggestion = "Review files and merge or archive duplicates"
+                }
+            }
+        }
+    }
+
+    return $findings
+}
+
+function Test-ExtractionConfidenceGaps {
+    param([hashtable]$Config)
+
+    $findings = @()
+    $vaultRoot = $Config.system.vault_root
+    $folderPath = "$vaultRoot/$($Config.folders.wiki)"
+
+    Write-Host "📚 Checking extraction confidence gaps..." -ForegroundColor Cyan
+
+    if (!(Test-Path $folderPath)) { return $findings }
+
+    foreach ($file in (Get-ChildItem -Path $folderPath -Filter "*.md" -Recurse)) {
+        try {
+            $content = Get-Content $file.FullName -Raw
+            $frontmatter = Get-HealthFrontmatter $content
+            if (Test-EmptyFrontmatterValue $frontmatter "sources") {
+                $findings += [PSCustomObject]@{
+                    Type = "Extraction Confidence Gaps"
+                    Severity = "Medium"
+                    File = Get-HealthRelativePath $file.FullName $vaultRoot
+                    Rule = "require-wiki-sources"
+                    Issue = "Wiki file lacks source provenance"
+                    Suggestion = "Add sources to frontmatter"
+                }
+            }
+        }
+        catch {
+            Write-Log "Error checking extraction confidence in $($file.FullName): $($_.Exception.Message)" "WARN"
+        }
+    }
+
+    return $findings
+}
+
+function Test-DerivedIndexDrift {
+    param([hashtable]$Config)
+
+    $findings = @()
+    $vaultRoot = $Config.system.vault_root
+    $folders = @($Config.folders.inbox, $Config.folders.raw, $Config.folders.working, $Config.folders.wiki)
+
+    Write-Host "🧭 Checking derived index drift..." -ForegroundColor Cyan
+
+    foreach ($folder in $folders) {
+        $folderPath = "$vaultRoot/$folder"
+        if (!(Test-Path $folderPath)) { continue }
+
+        foreach ($directory in @(Get-Item -LiteralPath $folderPath) + @(Get-ChildItem -Path $folderPath -Directory -Recurse)) {
+            $indexPath = Join-Path $directory.FullName "index.md"
+            if (!(Test-Path -LiteralPath $indexPath)) { continue }
+
+            $siblings = @(Get-ChildItem -Path $directory.FullName -Filter "*.md" -File | Where-Object { $_.Name -ne "index.md" })
+            if ($siblings.Count -eq 0) { continue }
+
+            $indexFile = Get-Item -LiteralPath $indexPath
+            $indexTime = $indexFile.LastWriteTime
+            try {
+                $frontmatter = Get-HealthFrontmatter (Get-Content $indexPath -Raw)
+                if ($frontmatter.ContainsKey("last_updated") -and ![string]::IsNullOrWhiteSpace($frontmatter.last_updated)) {
+                    $indexTime = [DateTime]::Parse($frontmatter.last_updated)
+                }
+            }
+            catch {
+                $indexTime = $indexFile.LastWriteTime
+            }
+
+            $newestSibling = $siblings | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($indexTime -lt $newestSibling.LastWriteTime) {
+                $findings += [PSCustomObject]@{
+                    Type = "Derived Index Drift"
+                    Severity = "Low"
+                    File = Get-HealthRelativePath $indexPath $vaultRoot
+                    Rule = "index-drift"
+                    Issue = "Index is older than sibling file: $($newestSibling.Name)"
+                    Suggestion = "Regenerate or update the folder index"
+                }
             }
         }
     }
@@ -394,7 +645,7 @@ function Test-Orphans {
     # Find files with no incoming links
     foreach ($file in $allFiles) {
         $fileName = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
-        $relativePath = $file.FullName.Replace($vaultRoot + "\", "").Replace("\", "/")
+        $relativePath = Get-HealthRelativePath $file.FullName $vaultRoot
         
         $hasIncomingLinks = $false
         foreach ($link in $allLinks) {
@@ -408,7 +659,8 @@ function Test-Orphans {
             $findings += [PSCustomObject]@{
                 Type = "Orphans"
                 Severity = "Low"
-                File = $file.FullName.Replace($PWD.Path + "\", "")
+                File = $relativePath
+                Rule = "incoming-link-required"
                 Issue = "No incoming links found"
                 Suggestion = "Add links from other content or consider archiving"
             }
@@ -418,20 +670,108 @@ function Test-Orphans {
     return $findings
 }
 
-function Show-HealthReport {
+function Get-HealthTypeOrder {
+    param([string]$Type)
+
+    if ($Type -like "Duplicates*") { return 4 }
+    switch ($Type) {
+        "Missing Metadata" { 1 }
+        "Broken Links" { 2 }
+        "Stale Content" { 3 }
+        "Orphans" { 5 }
+        "Extraction Confidence Gaps" { 6 }
+        "Derived Index Drift" { 7 }
+        default { 99 }
+    }
+}
+
+function Get-HealthSeverityOrder {
+    param([string]$Severity)
+
+    switch ($Severity) {
+        "High" { 1 }
+        "Medium" { 2 }
+        "Low" { 3 }
+        default { 99 }
+    }
+}
+
+function Get-OrderedHealthGroups {
     param([array]$Findings)
-    
+
+    return @($Findings | Group-Object Type | Sort-Object @{ Expression = { Get-HealthTypeOrder $_.Name } }, Name)
+}
+
+function Write-HealthReportFile {
+    param([array]$Findings, [hashtable]$Config, [string]$CheckType)
+
+    $vaultRoot = $Config.system.vault_root
+    $date = Get-Date -Format 'yyyy-MM-dd'
+    $reviewsFolder = if ($Config.folders.reviews) { $Config.folders.reviews } else { "reviews" }
+    $reportDir = Join-Path $vaultRoot $reviewsFolder
+    if (!(Test-Path $reportDir)) {
+        New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
+    }
+
+    $lines = @(
+        "---",
+        "generated: $date",
+        "check_type: $CheckType",
+        "total_findings: $($Findings.Count)",
+        "---",
+        "",
+        "# Health Check Report - $date",
+        "",
+        "## Summary",
+        "| Type | High | Medium | Low | Total |",
+        "|------|------|--------|-----|-------|"
+    )
+
+    foreach ($group in (Get-OrderedHealthGroups $Findings)) {
+        $high = @($group.Group | Where-Object { $_.Severity -eq "High" }).Count
+        $medium = @($group.Group | Where-Object { $_.Severity -eq "Medium" }).Count
+        $low = @($group.Group | Where-Object { $_.Severity -eq "Low" }).Count
+        $lines += "| $($group.Name) | $high | $medium | $low | $($group.Count) |"
+    }
+
+    foreach ($group in (Get-OrderedHealthGroups $Findings)) {
+        $lines += ""
+        $lines += "## $($group.Name)"
+        foreach ($finding in ($group.Group | Sort-Object @{ Expression = { Get-HealthSeverityOrder $_.Severity } }, File, Issue)) {
+            $rule = if ($finding.PSObject.Properties.Name -contains "Rule") { $finding.Rule } else { "" }
+            $lines += ""
+            $lines += "- **$($finding.Severity)** $($finding.File)"
+            $lines += "  - Rule: $rule"
+            $lines += "  - Issue: $($finding.Issue)"
+            $lines += "  - Suggested repair: $($finding.Suggestion)"
+        }
+    }
+
+    if ($Findings.Count -eq 0) {
+        $lines += "| None | 0 | 0 | 0 | 0 |"
+        $lines += ""
+        $lines += "No health issues found."
+    }
+
+    $reportPath = Join-Path $reportDir "health-report-$date.md"
+    Set-Content -Path $reportPath -Value $lines -Encoding UTF8
+    return $reportPath
+}
+
+function Show-HealthReport {
+    param([array]$Findings, [hashtable]$Config, [string]$CheckType)
+
+    $reportPath = Write-HealthReportFile $Findings $Config $CheckType
+
+    Write-Host "`n🏥 Health Check Report" -ForegroundColor Cyan
+    Write-Host ("=" * 80) -ForegroundColor Gray
+    Write-Host "Total Issues Found: $($Findings.Count)" -ForegroundColor Yellow
+    Write-Host "Report: $(Get-HealthRelativePath $reportPath $Config.system.vault_root)" -ForegroundColor Gray
+
     if ($Findings.Count -eq 0) {
         Write-Host "✅ No health issues found! Knowledge base is healthy." -ForegroundColor Green
         return
     }
-    
-    # Group findings by type
-    $groupedFindings = $Findings | Group-Object Type
-    
-    Write-Host "`n🏥 Health Check Report" -ForegroundColor Cyan
-    Write-Host ("=" * 80) -ForegroundColor Gray
-    Write-Host "Total Issues Found: $($Findings.Count)" -ForegroundColor Yellow
     
     # Summary by severity
     $severityCounts = $Findings | Group-Object Severity
@@ -447,11 +787,11 @@ function Show-HealthReport {
     Write-Host ""
     
     # Detailed findings by type
-    foreach ($group in $groupedFindings) {
+    foreach ($group in (Get-OrderedHealthGroups $Findings)) {
         Write-Host "📋 $($group.Name) ($($group.Count) issues)" -ForegroundColor Cyan
         Write-Host ("-" * 40) -ForegroundColor Gray
         
-        foreach ($finding in $group.Group | Sort-Object Severity, File) {
+        foreach ($finding in $group.Group | Sort-Object @{ Expression = { Get-HealthSeverityOrder $_.Severity } }, File, Issue) {
             $severityColor = switch ($finding.Severity) {
                 "High" { "Red" }
                 "Medium" { "Yellow" }
@@ -460,6 +800,9 @@ function Show-HealthReport {
             
             Write-Host "[$($finding.Severity)]" -NoNewline -ForegroundColor $severityColor
             Write-Host " $($finding.File)" -ForegroundColor White
+            if ($finding.PSObject.Properties.Name -contains "Rule") {
+                Write-Host "  Rule: $($finding.Rule)" -ForegroundColor DarkGray
+            }
             Write-Host "  Issue: $($finding.Issue)" -ForegroundColor Gray
             Write-Host "  Fix: $($finding.Suggestion)" -ForegroundColor DarkGray
             Write-Host ""
@@ -494,6 +837,8 @@ try {
             $allFindings += Test-StaleContent $config
             $allFindings += Test-Duplicates $config
             $allFindings += Test-Orphans $config
+            $allFindings += Test-ExtractionConfidenceGaps $config
+            $allFindings += Test-DerivedIndexDrift $config
         }
         "metadata" { $allFindings += Test-Metadata $config }
         "links" { $allFindings += Test-Links $config }
@@ -503,7 +848,7 @@ try {
     }
     
     # Show report
-    Show-HealthReport $allFindings
+    Show-HealthReport $allFindings $config $Type
     
     # Log health check
     Write-Log "Health check completed: $Type - $($allFindings.Count) issues found" "INFO"
