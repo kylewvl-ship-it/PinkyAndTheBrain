@@ -40,7 +40,7 @@ function Get-RepoRoot {
 }
 
 function Get-AllowedArchiveReasons {
-    return @("stale", "replaced", "low-confidence", "no-longer-relevant", "duplicate")
+    return @("stale", "replaced", "low-confidence", "no-longer-relevant", "duplicate", "health-check-resolution")
 }
 
 function Ensure-ArchiveMetadata {

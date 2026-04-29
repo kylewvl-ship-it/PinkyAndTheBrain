@@ -726,8 +726,74 @@ function Get-OrderedHealthGroups {
     return @($Findings | Group-Object { Get-HealthDisplayType $_.Type } | Sort-Object @{ Expression = { Get-HealthTypeOrder $_.Name } }, Name)
 }
 
+function Get-HealthDeferredPath {
+    $repoRoot = [Environment]::GetEnvironmentVariable('PINKY_GIT_REPO_ROOT')
+    if ([string]::IsNullOrWhiteSpace($repoRoot)) {
+        $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    }
+    return (Join-Path $repoRoot ".ai/health-deferred.json")
+}
+
+function Get-ActiveHealthDeferrals {
+    $path = Get-HealthDeferredPath
+    if (!(Test-Path -LiteralPath $path -PathType Leaf)) { return @() }
+    try {
+        $records = @(Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json)
+        $now = (Get-Date).ToUniversalTime()
+        return @($records | Where-Object {
+            $action = if ($_.PSObject.Properties.Name -contains "action") { [string]$_.action } else { "defer" }
+            if ($action -eq "mark-broken") {
+                $true
+            }
+            elseif ($action -ne "defer" -or $_.PSObject.Properties.Name -notcontains "deferred_until") {
+                $false
+            }
+            else {
+                try { ([datetime]::Parse([string]$_.deferred_until).ToUniversalTime()) -gt $now } catch { $false }
+            }
+        })
+    }
+    catch {
+        Write-Log "Unable to read health deferrals: $($_.Exception.Message)" "WARN"
+        return @()
+    }
+}
+
+function Apply-HealthDeferrals {
+    param([array]$Findings)
+
+    $active = @(Get-ActiveHealthDeferrals)
+    if ($active.Count -eq 0) {
+        return @{
+            Findings = @($Findings)
+            Deferred = @()
+        }
+    }
+
+    $deferredKeys = @{}
+    foreach ($record in $active) {
+        $deferredKeys["$($record.file)|$($record.rule)"] = $record
+    }
+
+    $visible = @()
+    $matched = @{}
+    foreach ($finding in $Findings) {
+        $key = "$($finding.File)|$($finding.Rule)"
+        if ($deferredKeys.ContainsKey($key)) {
+            $matched[$key] = $deferredKeys[$key]
+            continue
+        }
+        $visible += $finding
+    }
+
+    return @{
+        Findings = @($visible)
+        Deferred = @($matched.Values)
+    }
+}
+
 function Write-HealthReportFile {
-    param([array]$Findings, [hashtable]$Config, [string]$CheckType)
+    param([array]$Findings, [hashtable]$Config, [string]$CheckType, [array]$DeferredRecords = @())
 
     $vaultRoot = $Config.system.vault_root
     $date = Get-Date -Format 'yyyy-MM-dd'
@@ -780,15 +846,28 @@ function Write-HealthReportFile {
         $lines += "No health issues found."
     }
 
+    if ($DeferredRecords.Count -gt 0) {
+        $lines += ""
+        $lines += "## Deferred Issues"
+        foreach ($record in $DeferredRecords | Sort-Object file, rule) {
+            $note = if ($record.PSObject.Properties.Name -contains "note") { [string]$record.note } else { "" }
+            $lines += ""
+            $lines += "- $($record.file)"
+            $lines += "  - Rule: $($record.rule)"
+            $lines += "  - Deferred until: $($record.deferred_until)"
+            $lines += "  - Note: $note"
+        }
+    }
+
     $reportPath = Join-Path $reportDir "health-report-$date.md"
     Set-Content -Path $reportPath -Value $lines -Encoding UTF8
     return $reportPath
 }
 
 function Show-HealthReport {
-    param([array]$Findings, [hashtable]$Config, [string]$CheckType)
+    param([array]$Findings, [hashtable]$Config, [string]$CheckType, [array]$DeferredRecords = @())
 
-    $reportPath = Write-HealthReportFile $Findings $Config $CheckType
+    $reportPath = Write-HealthReportFile $Findings $Config $CheckType $DeferredRecords
 
     Write-Host "`n🏥 Health Check Report" -ForegroundColor Cyan
     Write-Host ("=" * 80) -ForegroundColor Gray
@@ -797,6 +876,19 @@ function Show-HealthReport {
 
     if ($Findings.Count -eq 0) {
         Write-Host "✅ No health issues found! Knowledge base is healthy." -ForegroundColor Green
+        if ($DeferredRecords.Count -gt 0) {
+            Write-Host ""
+            Write-Host "Deferred Issues ($($DeferredRecords.Count) issues)" -ForegroundColor Cyan
+            Write-Host ("-" * 40) -ForegroundColor Gray
+            foreach ($record in $DeferredRecords | Sort-Object file, rule) {
+                $note = if ($record.PSObject.Properties.Name -contains "note") { [string]$record.note } else { "" }
+                Write-Host "$($record.file)" -ForegroundColor White
+                Write-Host "  Rule: $($record.rule)" -ForegroundColor DarkGray
+                Write-Host "  Deferred until: $($record.deferred_until)" -ForegroundColor Gray
+                Write-Host "  Note: $note" -ForegroundColor DarkGray
+                Write-Host ""
+            }
+        }
         return
     }
     
@@ -835,6 +927,19 @@ function Show-HealthReport {
             }
             Write-Host "  Issue: $($finding.Issue)" -ForegroundColor Gray
             Write-Host "  Fix: $($finding.Suggestion)" -ForegroundColor DarkGray
+            Write-Host ""
+        }
+    }
+
+    if ($DeferredRecords.Count -gt 0) {
+        Write-Host "Deferred Issues ($($DeferredRecords.Count) issues)" -ForegroundColor Cyan
+        Write-Host ("-" * 40) -ForegroundColor Gray
+        foreach ($record in $DeferredRecords | Sort-Object file, rule) {
+            $note = if ($record.PSObject.Properties.Name -contains "note") { [string]$record.note } else { "" }
+            Write-Host "$($record.file)" -ForegroundColor White
+            Write-Host "  Rule: $($record.rule)" -ForegroundColor DarkGray
+            Write-Host "  Deferred until: $($record.deferred_until)" -ForegroundColor Gray
+            Write-Host "  Note: $note" -ForegroundColor DarkGray
             Write-Host ""
         }
     }
@@ -877,11 +982,15 @@ try {
         "orphans" { $allFindings += Test-Orphans $config }
     }
     
+    $deferResult = Apply-HealthDeferrals -Findings $allFindings
+    $visibleFindings = @($deferResult.Findings)
+    $deferredFindings = @($deferResult.Deferred)
+
     # Show report
-    Show-HealthReport $allFindings $config $Type
+    Show-HealthReport $visibleFindings $config $Type $deferredFindings
     
     # Log health check
-    Write-Log "Health check completed: $Type - $($allFindings.Count) issues found" "INFO"
+    Write-Log "Health check completed: $Type - $($visibleFindings.Count) issues found" "INFO"
 
     if ($Fix -and -not $WhatIf -and (Get-Command 'Invoke-GitCommit' -ErrorAction SilentlyContinue)) {
         $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -893,7 +1002,7 @@ try {
         }
     }
     
-    if ($allFindings.Count -gt 0) {
+    if ($visibleFindings.Count -gt 0) {
         exit 1  # Issues found
     }
     else {

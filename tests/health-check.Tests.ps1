@@ -104,6 +104,28 @@ Describe "health-check.ps1 - Story 6.1" {
         $result.Output | Should Not Match "https://example.com"
     }
 
+    It "suppresses mark-broken link findings indefinitely" {
+        Initialize-HealthWorkspace
+        New-HealthFile -RelativePath "wiki/links.md" -Frontmatter "status: active`nconfidence: medium`nlast_updated: 2026-04-01`nlast_verified: 2026-04-01`nsources: source-a" -Body "See [[missing-page]] in this note." | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $script:WorkRoot ".ai") -Force | Out-Null
+        $record = @([PSCustomObject]@{
+            file = "wiki/links.md"
+            rule = "link-target-exists"
+            action = "mark-broken"
+            deferred_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            deferred_until = $null
+            note = "intentional broken link"
+        })
+        Set-Content -Path (Join-Path $script:WorkRoot ".ai/health-deferred.json") -Value ($record | ConvertTo-Json -Depth 8) -Encoding UTF8
+
+        $result = Invoke-HealthScript -Arguments @("-Type", "links")
+
+        $result.ExitCode | Should Be 0
+        $result.Output | Should Match "Deferred Issues"
+        $result.Output | Should Match "wiki/links.md"
+        $result.Output | Should Not Match "Broken link: missing-page"
+    }
+
     It "reports orphan files but not files with incoming links" {
         Initialize-HealthWorkspace
         New-HealthFile -RelativePath "wiki/referenced.md" -Frontmatter "status: active`nconfidence: medium`nlast_updated: 2026-04-01`nlast_verified: 2026-04-01`nsources: source-a" | Out-Null
